@@ -1,0 +1,91 @@
+/**
+ * File Path: src/plugins/AppLayout/components/hero.css
+ * Version: 3.0.2
+ * Description: Refined and elegant styles for the Hero section,
+ *              fully integrated with the application's global theme variables.
+ *              --- UPDATED: Added margin-top to account for fixed header.
+ */
+
+/* ================================================
+   HERO SECTION WRAPPER
+   ================================================ */
+.hero-section {
+  padding: 3.5rem 2rem;
+  text-align: center;
+  /* Use app-layout's dark-bg for hero background, which adapts to light/dark/yellow */
+  background: var(--dark-bg);
+  /* Use text-primary for main hero text color */
+  color: var(--text-primary);
+  /* Use border-color for a subtle bottom border */
+  border-bottom: 1px solid var(--border-color);
+  transition: var(--transition); /* Use global transition variable */
+  
+  /* --- NEW: Add top margin equal to nav height to push content below fixed header --- */
+  margin-top: var(--nav-height); 
+}
+
+.hero-content {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+/* ================================================
+   TYPOGRAPHY
+   ================================================ */
+.hero-heading {
+  font-size: 2.8rem;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+  line-height: 1.2;
+  /* Always use text-primary for the main heading */
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.hero-subheading {
+  font-size: 1.35rem;
+  font-weight: 300;
+  /* Use text-secondary for the subheading to create hierarchy */
+  color: var(--text-secondary);
+  margin: 0.5rem auto 0;
+  max-width: 760px;
+  line-height: 1.5;
+}
+
+/* ================================================
+   RESPONSIVE DESIGN
+   ================================================ */
+@media (max-width: 992px) {
+  .hero-heading {
+    font-size: 2.4rem;
+  }
+  .hero-subheading {
+    font-size: 1.2rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-section {
+    padding: 3rem 1rem;
+  }
+  .hero-heading {
+    font-size: 2rem;
+    margin-bottom: 0.6rem;
+  }
+  .hero-subheading {
+    font-size: 1.1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-section {
+    padding: 2.5rem 0.8rem;
+  }
+  .hero-heading {
+    font-size: 1.8rem;
+  }
+  .hero-subheading {
+    font-size: 1rem;
+  }
+}

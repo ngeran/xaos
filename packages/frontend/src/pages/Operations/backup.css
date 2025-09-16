@@ -1,0 +1,511 @@
+/**
+ * File Path: src/pages/Operations/Backup/backup.css
+ * Version: 1.0.0
+ * Description: CSS styles for the Backup page with dark/light mode support.
+ * 
+ * Key Features:
+ * - Comprehensive dark and light mode support
+ * - Responsive design for all screen sizes
+ * - Smooth transitions and animations
+ * - Consistent styling with the application theme
+ * 
+ * How-To Guide:
+ * 1. This file is automatically imported by Backup.jsx
+ * 2. Styles are applied based on the parent theme context
+ * 3. Custom properties are defined for consistent theming
+ */
+
+/* =============================================================================
+   VARIABLES SECTION - CSS custom properties for theming
+   ============================================================================= */
+:root {
+  /* Light theme variables */
+  --backup-bg-light: #ffffff;
+  --backup-text-light: #1a1a1a;
+  --backup-border-light: #e0e0e0;
+  --backup-card-light: #f8f9fa;
+  --backup-primary-light: #2563eb;
+  --backup-primary-hover-light: #1d4ed8;
+  --backup-disabled-light: #94a3b8;
+  --backup-error-light: #dc2626;
+  --backup-success-light: #16a34a;
+  
+  /* Dark theme variables */
+  --backup-bg-dark: #0f172a;
+  --backup-text-dark: #f1f5f9;
+  --backup-border-dark: #334155;
+  --backup-card-dark: #1e293b;
+  --backup-primary-dark: #3b82f6;
+  --backup-primary-hover-dark: #2563eb;
+  --backup-disabled-dark: #475569;
+  --backup-error-dark: #ef4444;
+  --backup-success-dark: #22c55e;
+}
+/* =============================================================================
+   BASE STYLES SECTION - Fundamental page styling
+   ============================================================================= */
+.backup-page-container {
+  padding: 1.5rem;
+  min-height: 100%;
+  transition: all 0.3s ease;
+}
+
+/* Light theme base styles */
+.light .backup-page-container {
+  background-color: var(--backup-bg-light);
+  color: var(--backup-text-light);
+}
+
+/* Dark theme base styles */
+.dark .backup-page-container {
+  background-color: var(--backup-bg-dark);
+  color: var(--backup-text-dark);
+}
+
+/* =============================================================================
+   HEADER STYLES SECTION - Page title and description
+   ============================================================================= */
+.backup-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid;
+  transition: border-color 0.3s ease;
+}
+
+.light .backup-header {
+  border-color: var(--backup-border-light);
+}
+
+.dark .backup-header {
+  border-color: var(--backup-border-dark);
+}
+
+.backup-header h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.backup-header p {
+  opacity: 0.8;
+  font-size: 1rem;
+}
+
+/* =============================================================================
+   CONTENT STYLES SECTION - Main content area
+   ============================================================================= */
+.backup-content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.backup-auth-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid;
+  transition: all 0.3s ease;
+}
+
+.light .backup-auth-section {
+  background-color: var(--backup-card-light);
+  border-color: var(--backup-border-light);
+}
+
+.dark .backup-auth-section {
+  background-color: var(--backup-card-dark);
+  border-color: var(--backup-border-dark);
+}
+
+/* =============================================================================
+   ACTION BUTTONS SECTION - Backup controls
+   ============================================================================= */
+.backup-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.backup-button {
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.light .backup-button {
+  background-color: var(--backup-primary-light);
+  color: white;
+}
+
+.dark .backup-button {
+  background-color: var(--backup-primary-dark);
+  color: white;
+}
+
+.backup-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.light .backup-button:hover:not(:disabled) {
+  background-color: var(--backup-primary-hover-light);
+}
+
+.dark .backup-button:hover:not(:disabled) {
+  background-color: var(--backup-primary-hover-dark);
+}
+
+.backup-button-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.light .backup-button-disabled {
+  background-color: var(--backup-disabled-light);
+}
+
+.dark .backup-button-disabled {
+  background-color: var(--backup-disabled-dark);
+}
+
+/* =============================================================================
+   STATUS SECTION - Backup progress and feedback
+   ============================================================================= */
+.backup-status {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.light .backup-status {
+  background-color: var(--backup-card-light);
+  border: 1px solid var(--backup-border-light);
+}
+
+.dark .backup-status {
+  background-color: var(--backup-card-dark);
+  border: 1px solid var(--backup-border-dark);
+}
+
+.backup-progress {
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark .backup-progress {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.backup-progress-bar {
+  height: 100%;
+  width: 50%;
+  border-radius: 2px;
+  animation: progressAnimation 1.5s ease-in-out infinite;
+}
+
+.light .backup-progress-bar {
+  background-color: var(--backup-primary-light);
+}
+
+.dark .backup-progress-bar {
+  background-color: var(--backup-primary-dark);
+}
+
+@keyframes progressAnimation {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+/* =============================================================================
+   RESPONSIVE DESIGN SECTION - Mobile and tablet adaptations
+   ============================================================================= */
+@media (max-width: 768px) {
+  .backup-page-container {
+    padding: 1rem;
+  }
+  
+  .backup-header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .backup-auth-section {
+    padding: 1rem;
+  }
+  
+  .backup-button {
+    width: 100%;
+  }
+}
+
+/* =============================================================================
+   SINGLE DEVICE AUTH STYLES SECTION - Component-specific styling
+   ============================================================================= */
+.single-device-auth {
+  background: linear-gradient(to bottom right, rgba(248, 250, 252, 0.8), rgba(255, 255, 255, 0.9));
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: 1rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(4px);
+}
+
+.dark .single-device-auth {
+  background: linear-gradient(to bottom right, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.9));
+  border: 1px solid rgba(51, 65, 85, 0.6);
+}
+
+.auth-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.light .auth-header {
+  border-color: rgba(226, 232, 240, 0.8);
+}
+
+.dark .auth-header {
+  border-color: rgba(51, 65, 85, 0.8);
+}
+
+.auth-header-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.auth-icon {
+  padding: 0.375rem;
+  background: linear-gradient(to bottom right, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.1));
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.light .auth-icon {
+  background: linear-gradient(to bottom right, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.1));
+}
+
+.dark .auth-icon {
+  background: linear-gradient(to bottom right, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2));
+}
+
+.auth-icon svg {
+  height: 1rem;
+  width: 1rem;
+}
+
+.light .auth-icon svg {
+  color: #3b82f6;
+}
+
+.dark .auth-icon svg {
+  color: #60a5fa;
+}
+
+.auth-title h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: inherit;
+}
+
+.auth-title p {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.auth-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: linear-gradient(to right, rgba(248, 250, 252, 0.8), rgba(241, 245, 249, 0.5));
+  border-radius: 9999px;
+  border: 1px solid;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.light .auth-status {
+  background: linear-gradient(to right, rgba(248, 250, 252, 0.8), rgba(241, 245, 249, 0.5));
+  border-color: rgba(226, 232, 240, 0.6);
+  color: #475569;
+}
+
+.dark .auth-status {
+  background: linear-gradient(to right, rgba(30, 41, 59, 0.8), rgba(51, 65, 85, 0.5));
+  border-color: rgba(51, 65, 85, 0.6);
+  color: #cbd5e1;
+}
+
+.status-indicator {
+  height: 0.5rem;
+  width: 0.5rem;
+  border-radius: 50%;
+  background: linear-gradient(to right, #3b82f6, #2563eb);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.auth-fields {
+  padding: 1.5rem;
+}
+
+.auth-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .auth-fields-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.auth-field-group {
+  position: relative;
+}
+
+.auth-input-wrapper {
+  position: relative;
+}
+
+.auth-input {
+  width: 100%;
+  padding-left: 2.25rem;
+  padding-right: 1rem;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+  font-size: 0.875rem;
+  border: 1px solid;
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+  background-color: transparent;
+}
+
+.light .auth-input {
+  border-color: #e2e8f0;
+  background-color: #ffffff;
+  color: #1a1a1a;
+}
+
+.dark .auth-input {
+  border-color: #334155;
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
+.light .auth-input::placeholder {
+  color: #94a3b8;
+}
+
+.dark .auth-input::placeholder {
+  color: #64748b;
+}
+
+.auth-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+}
+
+.auth-input-error {
+  border-color: #ef4444 !important;
+  background-color: rgba(239, 68, 68, 0.05) !important;
+}
+
+.light .auth-input-error:focus {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+
+.dark .auth-input-error:focus {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3);
+}
+
+.auth-icon-input {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 1rem;
+  width: 1rem;
+  transition: color 0.2s ease;
+}
+
+.light .auth-icon-input {
+  color: #94a3b8;
+}
+
+.dark .auth-icon-input {
+  color: #64748b;
+}
+
+.auth-icon-error {
+  color: #ef4444 !important;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 1rem;
+  width: 1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  transition: color 0.2s ease;
+}
+
+.auth-password-toggle:hover {
+  color: #64748b;
+}
+
+.dark .auth-password-toggle {
+  color: #64748b;
+}
+
+.dark .auth-password-toggle:hover {
+  color: #94a3b8;
+}
+
+.auth-error-message {
+  font-size: 0.75rem;
+  margin-top: 0.375rem;
+  margin-left: 0.25rem;
+  color: #ef4444;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

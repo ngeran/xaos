@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/reports-schema.json",
+  "title": "Reports Configuration Schema",
+  "description": "Schema for validating reports.yaml configuration file",
+  "type": "object",
+  "patternProperties": {
+    "^test_[a-zA-Z0-9_]+$": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Human-readable title for the test"
+        },
+        "category": {
+          "type": "string",
+          "description": "Category grouping for the test"
+        },
+        "rpc": {
+          "type": "string",
+          "description": "RPC command to execute"
+        },
+        "rpc_args": {
+          "type": "object",
+          "description": "Optional arguments to pass to the RPC call",
+          "additionalProperties": {
+            "type": ["string", "boolean", "number"]
+          }
+        },
+        "xpath": {
+          "type": "string",
+          "description": "XPath expression to select data elements"
+        },
+        "fields": {
+          "type": "object",
+          "description": "Mapping of display names to data field names",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "minProperties": 1
+        }
+      },
+      "required": ["title", "category", "rpc", "xpath", "fields"],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

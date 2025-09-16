@@ -1,0 +1,102 @@
+{
+  "id": "app-layout",
+  "name": "Application Layout Manager",
+  "version": "1.0.0",
+  "type": "layout",
+  "description": "Core application layout plugin that manages the overall structure, theme, navigation, and responsive design of the application.",
+  "author": "Plugin System Core Team",
+  "license": "MIT",
+  "keywords": ["layout", "theme", "navigation", "responsive", "ui"],
+  "tags": ["core", "ui", "layout", "theme"],
+  "priority": 1000,
+  "capabilities": [
+    "renders_ui",
+    "modifies_layout",
+    "theme_aware",
+    "provides_routes"
+  ],
+  "permissions": [
+    "modify_ui",
+    "read_user_data",
+    "write_user_data"
+  ],
+  "dependencies": [],
+  "peerDependencies": [],
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "theme": {
+          "type": "string",
+          "enum": ["light", "dark", "auto"],
+          "default": "auto"
+        },
+        "showSidebar": {
+          "type": "boolean",
+          "default": true
+        },
+        "sidebarCollapsible": {
+          "type": "boolean",
+          "default": true
+        },
+        "showHeader": {
+          "type": "boolean",
+          "default": true
+        },
+        "showFooter": {
+          "type": "boolean",
+          "default": true
+        },
+        "enableBreadcrumbs": {
+          "type": "boolean",
+          "default": true
+        },
+        "maxContentWidth": {
+          "type": "string",
+          "default": "1200px"
+        },
+        "headerHeight": {
+          "type": "string",
+          "default": "64px"
+        },
+        "sidebarWidth": {
+          "type": "string",
+          "default": "280px"
+        },
+        "footerHeight": {
+          "type": "string",
+          "default": "60px"
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaults": {
+      "theme": "auto",
+      "showSidebar": true,
+      "sidebarCollapsible": true,
+      "showHeader": true,
+      "showFooter": true,
+      "enableBreadcrumbs": true,
+      "maxContentWidth": "1200px",
+      "headerHeight": "64px",
+      "sidebarWidth": "280px",
+      "footerHeight": "60px"
+    }
+  },
+  "minimumSystemVersion": "1.0.0",
+  "platforms": ["web", "mobile"],
+  "icon": "/icons/layout.svg",
+  "screenshots": [
+    "/screenshots/layout-light.png",
+    "/screenshots/layout-dark.png"
+  ],
+  "homepage": "https://github.com/your-repo/plugin-system",
+  "repository": "https://github.com/your-repo/plugin-system/tree/main/src/plugins/AppLayout",
+  "changeLog": [
+    {
+      "version": "1.0.0",
+      "date": "2025-01-01",
+      "changes": ["Initial release with core layout functionality", "Theme switching support", "Responsive design", "Sidebar navigation"]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+
+[
+  {
+    "id": "management",
+    "title": "Management",
+    "icon": "🛠️",
+    "children": [
+      { "title": "Image Uploads", "href": "/management/image-uploads", "icon": "🖼️" },
+      { "title": "Code Upgrades", "href": "/management/code-upgrades", "icon": "⬆️" }
+    ]
+  },
+  {
+    "id": "automation",
+    "title": "Automation",
+    "icon": "⚡",
+    "children": [
+      { "title": "Configuration Templates", "href": "/automation/templates", "icon": "📑" },
+      { "title": "Validation (JSNAPy)", "href": "/automation/validation", "icon": "✅" }
+    ]
+  },
+  {
+    "id": "reporting",
+    "title": "Reporting",
+    "icon": "📊",
+    "children": [
+      { "title": "Device Reports", "href": "/reporting/device-reports", "icon": "📋" }
+    ]
+  },
+  {
+    "id": "operations",
+    "title": "Operations",
+    "subtitle": "Maintenance Workflows",
+    "icon": "🔄",
+    "children": [
+      { "title": "Backup Configurations", "href": "/operations/backups", "icon": "💾" },
+      { "title": "Restore Configurations", "href": "/operations/restores", "icon": "♻️" }
+    ]
+  }
+]

@@ -1,0 +1,93 @@
+/**
+ * File Path: packages/frontend/src/plugins/AppLayout/components/header.css
+ * Version: 1.0.1
+ * Description: Minimal custom CSS for the Header component.
+ *              Most styling is handled by global `app-layout.css` and CSS variables.
+ *
+ * Key Features:
+ * - Defines animations for mega menu transitions and badge icons.
+ * - Custom scrollbar styling for the mega menu content.
+ * - Ensures header elements use global CSS variables for theme consistency.
+ *
+ * Detail How-To Guide:
+ * 1. This file complements `app-layout.css` for Header-specific styles not suitable for global use.
+ * 2. Animations like `slideDown` are applied to the mega menu dropdown.
+ * 3. The custom scrollbar targets `.header__mega-menu-content` for a consistent look.
+ * 4. Color variables ensure elements like badges and dropdown links respect the current theme.
+ *
+ * Change Log:
+ * - 1.0.1 (2023-10-27): Updated header comments to meet new documentation standards.
+ * - 1.0.0 (Original): Initial minimal styles for header animations and custom scrollbar.
+ */
+
+/* ================================================
+   ANIMATIONS
+   ================================================ */
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ================================================
+   MEGA MENU ANIMATIONS
+   ================================================ */
+
+.header__mega-menu-dropdown {
+  animation: slideDown 0.2s ease;
+}
+
+.header__badge-icon--spin {
+  animation: spin 1s linear infinite;
+}
+
+/* ================================================
+   CUSTOM SCROLLBAR FOR MEGA MENU
+   ================================================ */
+
+.header__mega-menu-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.header__mega-menu-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.header__mega-menu-content::-webkit-scrollbar-thumb {
+  background: rgba(var(--text-primary-rgb, 255, 255, 255), 0.2);
+  border-radius: 3px;
+}
+
+.header__mega-menu-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--text-primary-rgb, 255, 255, 255), 0.3);
+}
+
+/* ================================================
+   OPTIONAL: HEADER ELEMENT COLORS
+   - Ensure hover / badge / dropdown use variables
+   ================================================ */
+
+.header__badge-icon {
+  color: var(--primary-color);
+}
+
+.header__mega-menu-dropdown a {
+  color: var(--text-primary);
+  transition: var(--transition);
+}
+
+.header__mega-menu-dropdown a:hover {
+  color: var(--primary-color);
+}

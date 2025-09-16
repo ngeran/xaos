@@ -1,0 +1,63 @@
+# =============================================================================
+# SETTINGS NAVIGATION DATA
+# =============================================================================
+navigation:
+  - id: general
+    label: General
+    icon: Settings
+    type: section
+    children:
+      - id: profile
+        label: Profile 1
+        icon: User
+        type: page
+      - id: preferences
+        label: Preferences
+        icon: Monitor
+        type: page
+      - id: notifications
+        label: Notifications
+        icon: Bell
+        type: page
+
+  - id: security
+    label: Security Rust
+    icon: Shield
+    type: section
+    children:
+      - id: authentication
+        label: Authentication
+        icon: Lock
+        type: page
+      - id: permissions
+        label: Permissions
+        icon: Users
+        type: page
+
+  - id: network
+    label: Network
+    icon: Network
+    type: section
+    children:
+      - id: inventory
+        label: Device Inventory
+        icon: Database
+        type: page
+      - id: monitoring
+        label: Monitoring
+        icon: Activity
+        type: page
+      - id: topology
+        label: Network Topology
+        icon: Globe
+        type: page
+
+  - id: appearance
+    label: Appearance
+    icon: Palette
+    type: section
+    children:
+      - id: theme
+        label: Theme Settings
+        icon: Palette
+        type: page

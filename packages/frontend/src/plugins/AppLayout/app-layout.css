@@ -1,0 +1,768 @@
+/**
+ * File Path: src/plugins/AppLayout/app-layout.css
+ * Version: 2.2.1
+ * Description: CSS styles that exactly match the original styles.css.
+ *              Includes all mega menu styles, navigation, and layout.
+ *              --- ADDED: Yellow theme variant (data-theme="yellow").
+ *              --- UPDATED: Added new CSS variables for WebSocket status dropdown.
+ *
+ * Key Features:
+ * - Comprehensive styling for header, navigation, mega menus, and footer.
+ * - Dynamic theme switching via CSS variables for Dark, Light, and Yellow themes.
+ * - Responsive adjustments for various screen sizes.
+ * - Preserves original selectors for backward compatibility.
+ *
+ * Detail How-To Guide:
+ * 1. To use a theme, add `data-theme="<theme-name>"` to the `<body>` tag (e.g., `data-theme="yellow"`).
+ * 2. Navigation items and mega menu modules automatically pick up theme colors.
+ * 3. Responsive breakpoints are defined for mobile, tablet, and desktop layouts.
+ *
+ * Change Log:
+ * - 2.2.1 (2023-10-27): Added specific CSS variables for WebSocket status dropdown to ensure theme compatibility.
+ * - 2.2.0 (2023-10-20): Initial release with Dark/Light/Yellow themes, mega menu, and responsive design.
+ */
+
+/* ================================================
+   CSS VARIABLES (Default / Dark Theme)
+   ================================================ */
+
+:root {
+  --primary-color: #0066ff;
+  --secondary-color: #00d4ff;
+  --dark-bg: #0a0a0a;
+  --dark-surface: #1a1a1a;
+  --mega-menu-bg: #3b4144e6;
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --border-color: #2a2a2a;
+  --nav-height: 72px;
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* WebSocket Status Dropdown */
+  --ws-dropdown-bg: var(--dark-surface);
+  --ws-dropdown-border: var(--border-color);
+  --ws-dropdown-text: var(--text-primary);
+  --ws-dropdown-secondary-text: var(--text-secondary);
+  --ws-dropdown-item-hover-bg: rgba(255, 255, 255, 0.08);
+
+   /* RGB versions for rgba() support */
+  --text-primary-rgb: 255, 255, 255;
+  --text-secondary-rgb: 160, 160, 160;
+  --primary-color-rgb: 0, 102, 255;
+  --border-color-rgb: 42, 42, 42;
+}
+
+/* ================================================
+   LIGHT THEME (original)
+   ================================================ */
+
+[data-theme="light"] {
+  --primary-color: #0066ff;
+  --secondary-color: #00d4ff;
+  --dark-bg: #ffffff;
+  --dark-surface: #f5f5f5;
+  --mega-menu-bg: #ffffffe6;
+  --text-primary: #000000;
+  --text-secondary: #666666;
+  --border-color: #e0e0e0;
+
+  /* WebSocket Status Dropdown */
+  --ws-dropdown-bg: var(--dark-surface);
+  --ws-dropdown-border: var(--border-color);
+  --ws-dropdown-text: var(--text-primary);
+  --ws-dropdown-secondary-text: var(--text-secondary);
+  --ws-dropdown-item-hover-bg: rgba(0, 0, 0, 0.05);
+
+  --text-primary-rgb: 0, 0, 0;
+  --text-secondary-rgb: 102, 102, 102;
+  --primary-color-rgb: 0, 102, 255;
+  --border-color-rgb: 224, 224, 224;
+}
+
+/* ================================================
+   YELLOW THEME (NEW)
+   - Provides a drop-in yellow-themed palette that maps to
+     the same variable names used across this stylesheet.
+   - Toggle by setting <body data-theme="yellow"> or
+     programmatically applying the attribute.
+   ================================================ */
+
+[data-theme="yellow"] {
+  /* Primary / Accent */
+  --primary-color: #facc15;   /* Tailwind yellow-400 (accent) */
+  --secondary-color: #fbbf24; /* amber/yellow */
+  /* Surfaces */
+  --dark-bg: #1a1a00;         /* background base for header/footer */
+  --dark-surface: #262600;    /* surfaces (cards, modules) */
+  --mega-menu-bg: rgba(250, 204, 21, 0.08);
+  /* Text */
+  --text-primary: #fefce8;    /* very light warm text */
+  --text-secondary: #eab308;  /* yellow-600 for accents / muted labels */
+  /* Borders & misc */
+  --border-color: #facc15;
+  --nav-height: 72px;
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* WebSocket Status Dropdown */
+  --ws-dropdown-bg: var(--dark-surface);
+  --ws-dropdown-border: var(--border-color);
+  --ws-dropdown-text: var(--text-primary);
+  --ws-dropdown-secondary-text: var(--text-secondary);
+  --ws-dropdown-item-hover-bg: rgba(250, 204, 21, 0.08); /* Yellow tint hover */
+
+  --text-primary-rgb: 254, 252, 232;    /* RGB of #fefce8 */
+  --text-secondary-rgb: 234, 179, 8;    /* RGB of #eab308 */
+  --primary-color-rgb: 250, 204, 21;    /* RGB of #facc15 */
+  --border-color-rgb: 250, 204, 21;     /* RGB of #facc15 */
+}
+
+/* Slight visual overrides so navbar/footer match yellow look */
+[data-theme="yellow"] .navbar {
+  background: rgba(38, 38, 0, 0.95); /* dark warm base */
+  border-bottom: 1px solid var(--border-color);
+}
+
+[data-theme="yellow"] footer {
+  background: rgba(26, 26, 0, 0.95);
+  border-top: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+/* ================================================
+   NAVIGATION STYLES (From original styles.css)
+   ================================================ */
+
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(10, 10, 10, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-color);
+  z-index: 1000;
+  height: var(--nav-height);
+  display: flex;
+  align-items: center;
+}
+
+[data-theme="light"] .navbar {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.nav-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+}
+
+.nav-logo .logo-img {
+  height: 32px;
+  width: auto;
+}
+
+.nav-menu {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  position: relative;
+}
+
+.nav-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: var(--transition);
+  padding: 0.5rem 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  color: var(--text-primary);
+}
+
+.icon-plus {
+  width: 10px;
+  height: 10px;
+  transition: transform 0.3s ease;
+}
+
+.nav-link.active .icon-plus {
+  transform: rotate(45deg);
+}
+
+.nav-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  position: relative;
+}
+
+.icon-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--primary-color);
+  /* Use semi-opaque primary to keep hover consistent across themes */
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* If you want the hover tint to match the primary color more closely,
+   you can replace the background line above with:
+   background: rgba(var(--primary-rgb, 250,204,21), 0.08);
+   (would require an additional --primary-rgb var definition) */
+
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+#themeToggle .sun-icon,
+#themeToggle .moon-icon {
+  position: absolute;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+[data-theme="dark"] #themeToggle .sun-icon {
+  opacity: 1;
+  transform: rotate(0deg);
+}
+
+[data-theme="dark"] #themeToggle .moon-icon {
+  opacity: 0;
+  transform: rotate(180deg);
+}
+
+[data-theme="light"] #themeToggle .sun-icon {
+  opacity: 0;
+  transform: rotate(180deg);
+}
+
+[data-theme="light"] #themeToggle .moon-icon {
+  opacity: 1;
+  transform: rotate(0deg);
+}
+
+#wifiBtn.active svg path {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.mobile-menu-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+}
+
+.mobile-menu-toggle span {
+  width: 24px;
+  height: 2px;
+  background: var(--text-primary);
+  transition: var(--transition);
+}
+
+/* ================================================
+   MEGA MENU STYLES (From original styles.css)
+   ================================================ */
+
+.floating__nav-modules {
+  position: fixed;
+  top: var(--nav-height);
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+  z-index: 999;
+  max-width: 90vw;
+  max-height: calc(100vh - var(--nav-height) - 40px);
+}
+
+.floating__nav-modules.active {
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.mega-menu-wrapper {
+  backdrop-filter: blur(50px);
+  background-color: var(--mega-menu-bg);
+  border-radius: 0.75rem;
+  outline: 0.13em solid var(--mega-menu-bg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.mega-menu-container {
+  position: relative;
+  padding: 0.75rem;
+}
+
+.nav__module {
+  display: none;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: var(--transition);
+}
+
+.nav__module.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Products Grid Layout */
+.grid-layout-products-compact {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 0.75rem;
+  min-width: 720px;
+}
+
+.products-grid-compact {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+/* Solutions Grid Layout */
+.grid-layout-solutions-compact {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  min-width: 750px;
+}
+
+/* Resources Grid Layout */
+.grid-layout-resources-compact {
+  display: grid;
+  grid-template-columns: 3fr 1.5fr;
+  gap: 1rem;
+  min-width: 680px;
+}
+
+.resources-main-compact {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+/* Module Inner Styles */
+.nav__module-inner {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: var(--transition);
+  position: relative;
+  background: var(--dark-surface);
+  border: 1px solid var(--border-color);
+}
+
+.nav__module-inner.is-hero-compact {
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  padding: 1.25rem;
+  height: 100%;
+}
+
+.nav__module-inner.is-solution-compact {
+  flex-direction: column;
+  justify-content: flex-start;
+  text-align: center;
+  padding: 1.25rem 1rem;
+  min-height: 220px;
+}
+
+.nav__module-inner.is-item-compact {
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.nav__module-inner:hover:not(.is-coming-soon) {
+  transform: translateY(-2px);
+  border-color: var(--primary-color);
+  box-shadow: 0 8px 20px rgba(0, 102, 255, 0.15);
+}
+
+.nav__module-inner.is-coming-soon {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.module-content {
+  z-index: 1;
+  width: 100%;
+}
+
+.module-info-compact {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Solution Features */
+.solution-icon-compact {
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.solution-features-compact {
+  list-style: none;
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.solution-features-compact li {
+  padding: 0.15rem 0;
+  position: relative;
+  padding-left: 1.25rem;
+}
+
+.solution-features-compact li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: var(--primary-color);
+  font-size: 0.75rem;
+}
+
+/* Resources Styles */
+.resources-section-compact {
+  background: var(--dark-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.resources-section-title-compact {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.resource-links-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.resource-link-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  color: var(--text-primary);
+  text-decoration: none;
+  border-radius: 4px;
+  transition: var(--transition);
+  font-size: 0.85rem;
+}
+
+.resource-link-compact:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateX(3px);
+}
+
+.resource-icon-compact {
+  font-size: 1rem;
+}
+
+.resources-featured-compact {
+  background: var(--dark-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.featured-resource-compact {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: var(--transition);
+  padding: 0.5rem;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.featured-resource-compact:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateX(3px);
+}
+
+.featured-resource-compact img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.featured-info-compact h5 {
+  font-size: 0.85rem;
+  margin: 0.25rem 0;
+  font-weight: 500;
+}
+
+.tag-compact {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  background: rgba(0, 102, 255, 0.2);
+  color: var(--primary-color);
+  border-radius: 3px;
+  font-size: 0.65rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Dotted Background */
+.dotted-bg-wrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  z-index: 0;
+}
+
+.dotted-bg {
+  width: 100%;
+  height: 100%;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px);
+  background-size: 16px 16px;
+  opacity: 0.3;
+}
+
+/* Typography */
+.heading-style-h6 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.p-tiny {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.opacity-07 { opacity: 0.7; }
+.opacity-06 { opacity: 0.6; }
+
+/* Visual Elements */
+.visual__el-wrap-compact {
+  margin-top: 0.75rem;
+}
+
+.visual__el-wrap-compact img {
+  max-width: 70px;
+  height: auto;
+}
+
+.nav__icon-wrap-compact {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav__icon-wrap-compact svg {
+  width: 100%;
+  height: 100%;
+}
+
+.nav__module-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+/* ================================================
+   WEBSOCKET STATUS DROPDOWN STYLES
+   ================================================ */
+.websocket-status-dropdown-container {
+  position: relative; /* Needed for positioning the dropdown */
+}
+
+.websocket-status-dropdown {
+  position: absolute;
+  top: calc(100% + 10px); /* Position below the button */
+  right: 0; /* Align to the right of the button */
+  width: 300px; /* Fixed width for the dropdown */
+  max-height: 400px; /* Max height for scrollable content */
+  overflow-y: auto; /* Enable scrolling if content overflows */
+  background-color: var(--ws-dropdown-bg);
+  border: 1px solid var(--ws-dropdown-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1001; /* Above other nav elements */
+  padding: 0.75rem;
+  color: var(--ws-dropdown-text);
+  font-size: 0.9rem;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+}
+
+.websocket-status-dropdown.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.ws-dropdown-header {
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ws-dropdown-border);
+  color: var(--text-primary); /* Ensure header text stands out */
+}
+
+.ws-log-entry {
+  padding: 0.5rem 0;
+  border-bottom: 1px dashed var(--ws-dropdown-border); /* Use var for dashed border */
+}
+
+.ws-log-entry:last-child {
+  border-bottom: none;
+}
+
+.ws-log-timestamp {
+  font-size: 0.75rem;
+  color: var(--ws-dropdown-secondary-text);
+  margin-bottom: 0.25rem;
+  display: block; /* Ensure timestamp is on its own line */
+}
+
+.ws-log-message {
+  line-height: 1.4;
+}
+
+.ws-log-status {
+  font-weight: 500;
+  margin-right: 0.5rem;
+  text-transform: capitalize; /* Make status like 'connected' appear nicely */
+}
+
+/* Status specific colors (can be further refined with theme variables) */
+.ws-log-status.connected { color: #28a745; /* Green */ }
+.ws-log-status.disconnected { color: #dc3545; /* Red */ }
+.ws-log-status.connecting { color: #ffc107; /* Yellow/Orange */ }
+.ws-log-status.error { color: #dc3545; /* Red */ }
+.ws-log-status.disabled { color: var(--text-secondary); /* Grey */ }
+
+
+/* ================================================
+   RESPONSIVE DESIGN (From original styles.css)
+   ================================================ */
+
+@media (max-width: 1024px) {
+  .grid-layout-products-compact {
+    grid-template-columns: 1fr;
+    min-width: auto;
+  }
+
+  .products-grid-compact {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+  }
+
+  .grid-layout-solutions-compact {
+    grid-template-columns: 1fr;
+    min-width: auto;
+  }
+
+  .grid-layout-resources-compact {
+    grid-template-columns: 1fr;
+    min-width: auto;
+  }
+
+  .resources-main-compact {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .nav-menu {
+    display: none;
+  }
+
+  .nav-actions {
+    gap: 0.5rem;
+  }
+
+  .mobile-menu-toggle {
+    display: flex;
+  }
+
+  .floating__nav-modules {
+    display: none;
+  }
+
+  .websocket-status-dropdown {
+    right: 10px; /* Adjust dropdown position for smaller screens */
+    left: auto;
+    width: calc(100% - 20px); /* Make dropdown wider on small screens */
+  }
+}
+
+@media (max-width: 480px) {
+  .nav-logo .logo-img {
+    height: 28px;
+  }
+  
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .icon-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+}

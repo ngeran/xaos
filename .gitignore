@@ -1,0 +1,77 @@
+
+# =========================
+# Rust Backend
+# =========================
+
+# Compiled files and build output
+/target/
+**/*.rs.bk
+
+# Cargo package manager
+/Cargo.lock
+
+# Rust backend debug builds
+/packages/backend/target/
+
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Rust Language Server / IDE files
+**/*.rs.bk
+*.swp
+*.swo
+*.log
+
+# =========================
+# Node / Frontend (React + Vite + Tailwind)
+# =========================
+
+# Node modules
+/node_modules/
+/packages/frontend/node_modules/
+
+# Build output
+/dist/
+/packages/frontend/dist/
+
+# Vite cache
+/.vite/
+packages/frontend/.vite/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# npm / pnpm / yarn logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE/editor files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# =========================
+# Optional / Misc
+# =========================
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp

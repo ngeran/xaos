@@ -1,0 +1,570 @@
+/*
+ * File Path: src/plugins/AppLayout/components/WebSocketStatus.css
+ * Version: 2.3.8 (patched)
+ * Description: Modern, sophisticated styles for the WebSocketStatus component
+ *              with glassmorphism effects, smooth animations, and clean metrics display.
+ *              Updated with automatic connection management (no manual controls),
+ *              compact dropdown with optimized space utilization,
+ *              modern card layouts, and enhanced visual hierarchy for improved readability.
+ *
+ * Updates in v2.3.8:
+ * - FIXED: Improved contrast in light mode for text and icons (e.g., text-gray-900, stroke-gray-900)
+ * - FIXED: Removed square background/border from .websocket-status-btn to show only signal icon
+ * - Adjusted .websocket-status-btn to icon-only size with hover/status effects preserved
+ * - Maintained scrollbar fixes (break-words, max-width: 400px, overflow: hidden)
+ * - Ensured mobile responsiveness with max-w-[95vw] and max-w-[150px] for .ws-url-value
+ * - Kept debug borders (commented out) for overflow diagnosis
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base container for the button and dropdown */
+.websocket-status-dropdown-container {
+  @apply relative inline-block;
+  /* Debug: Visualize container */
+  /* background: rgba(255, 0, 0, 0.1); */
+}
+
+/* Icon-only button styling with no background or border */
+.websocket-status-btn {
+  @apply w-5 h-5 flex items-center justify-center transition-all duration-200 ease-in-out
+         focus:outline-none focus:ring-2 focus:ring-opacity-30;
+}
+
+.websocket-status-btn:disabled {
+  @apply cursor-not-allowed opacity-75;
+}
+
+/* Icon styling with smooth transitions */
+.websocket-status-btn .ws-icon {
+  @apply w-5 h-5 transition-all duration-200;
+  stroke-width: 2;
+}
+
+/* Status-specific colors for the icon */
+.ws-status-disabled {
+  @apply text-gray-400 hover:text-gray-300 focus:ring-gray-400/30;
+}
+
+.ws-status-connecting {
+  @apply text-amber-400 hover:text-amber-300 focus:ring-amber-400/30;
+}
+
+.ws-status-connected {
+  @apply text-emerald-400 hover:text-emerald-300 focus:ring-emerald-400/30;
+}
+
+.ws-status-disconnected,
+.ws-status-error {
+  @apply text-red-400 hover:text-red-300 focus:ring-red-400/30;
+}
+
+/* Dropdown with content-driven sizing and scrollbar prevention */
+.websocket-status-dropdown {
+  @apply absolute right-0 mt-1
+         backdrop-blur-xl bg-white/5 border border-white/10
+         rounded-xl shadow-xl
+         z-50 opacity-0 invisible scale-95 
+         transition-all duration-200 ease-out;
+  min-width: fit-content;
+  max-width: 400px; /* Prevent excessive width */
+  overflow: hidden;
+  /* Debug: Visualize dropdown */
+  /* border: 1px solid red; */
+}
+
+/* Ensure dropdown is visible when open */
+.websocket-status-dropdown.open {
+  @apply opacity-100 visible scale-100;
+}
+
+/* Theme adaptations with improved contrast for light mode */
+.theme-light .websocket-status-dropdown {
+  @apply bg-white/95 border-gray-200/50 shadow-xl;
+}
+
+.theme-yellow .websocket-status-dropdown {
+  @apply bg-yellow-50/95 border-yellow-200/50;
+}
+
+/* Compact header with gradient */
+.ws-dropdown-header {
+  @apply p-1.5 text-xs font-semibold text-white
+         bg-gradient-to-r from-slate-800/90 to-slate-700/90
+         border-b border-white/10;
+}
+
+.theme-light .ws-dropdown-header {
+  @apply text-gray-900 bg-gradient-to-r from-gray-50 to-gray-100
+         border-b border-gray-200/50;
+}
+
+.theme-yellow .ws-dropdown-header {
+  @apply text-yellow-900 bg-gradient-to-r from-yellow-50 to-yellow-100
+         border-b border-yellow-200/50;
+}
+
+/* Compact connection status indicator */
+.ws-status-indicator {
+  @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium
+         backdrop-blur-sm;
+}
+
+.ws-status-indicator.connected {
+  @apply bg-emerald-500/20 text-emerald-300 border border-emerald-500/30;
+}
+
+.ws-status-indicator.connecting {
+  @apply bg-amber-500/20 text-amber-300 border border-amber-500/30;
+}
+
+.ws-status-indicator.disconnected,
+.ws-status-indicator.error {
+  @apply bg-red-500/20 text-red-300 border border-red-500/30;
+}
+
+.ws-status-indicator.disabled {
+  @apply bg-gray-500/20 text-gray-400 border border-gray-500/30;
+}
+
+.theme-light .ws-status-indicator.connected {
+  @apply bg-emerald-100 text-emerald-800 border-emerald-300;
+}
+
+.theme-light .ws-status-indicator.connecting {
+  @apply bg-amber-100 text-amber-800 border-amber-300;
+}
+
+.theme-light .ws-status-indicator.disconnected,
+.theme-light .ws-status-indicator.error {
+  @apply bg-red-100 text-red-800 border-red-300;
+}
+
+.theme-light .ws-status-indicator.disabled {
+  @apply bg-gray-100 text-gray-800 border-gray-300;
+}
+
+/* Pulse animation for connecting status */
+.ws-status-indicator.connecting::before {
+  @apply content-[''] w-1.5 h-1.5 rounded-full bg-current animate-pulse;
+}
+
+/* Content wrapper with flexible height and no overflow */
+.ws-content-wrapper {
+  @apply flex flex-col;
+  overflow: hidden;
+  /* Debug: Visualize wrapper */
+  /* border: 1px solid blue; */
+}
+
+/* Section titles for better hierarchy */
+.ws-section-title {
+  @apply text-xs font-semibold text-gray-300 mb-0.5 flex items-center gap-1;
+}
+
+.theme-light .ws-section-title {
+  @apply text-gray-900;
+}
+
+.theme-yellow .ws-section-title {
+  @apply text-yellow-900;
+}
+
+/* Metrics section with minimal padding */
+.ws-metrics-section {
+  @apply p-1.5 border-b border-white/10;
+  overflow: hidden;
+}
+
+.theme-light .ws-metrics-section {
+  @apply border-gray-200/50;
+}
+
+.theme-yellow .ws-metrics-section {
+  @apply border-yellow-200/50;
+}
+
+/* Grid layout for metrics with dynamic width */
+.ws-metrics-grid {
+  @apply grid grid-cols-1 gap-0.5;
+}
+
+/* Full-width metric cards with dynamic sizing */
+.ws-metric-card {
+  @apply bg-white/5 backdrop-blur-sm rounded-lg p-1 border border-white/10
+         hover:bg-white/10 transition-all duration-200
+         hover:border-white/20 hover:shadow-md hover:scale-[1.01]
+         flex items-center justify-between
+         relative overflow-hidden;
+  width: 100%;
+  /* Debug: Visualize card */
+  /* border: 1px solid green; */
+}
+
+.theme-light .ws-metric-card {
+  @apply bg-gray-50/90 border-gray-200/50 hover:bg-gray-100/90
+         hover:border-gray-300/50;
+}
+
+.theme-yellow .ws-metric-card {
+  @apply bg-yellow-50/90 border-yellow-200/50 hover:bg-yellow-100/90
+         hover:border-yellow-300/50;
+}
+
+/* Left section with icon and label */
+.ws-metric-left {
+  @apply flex items-center gap-0.5 min-w-0 flex-1;
+}
+
+/* Metric icons */
+.ws-metric-icon {
+  @apply w-4 h-4 p-0.5 rounded-lg bg-white/10 text-white flex-shrink-0
+         transition-all duration-200;
+}
+
+.ws-metric-icon svg {
+  @apply w-full h-full stroke-current;
+}
+
+.theme-light .ws-metric-icon {
+  @apply bg-gray-200/50 text-gray-900;
+}
+
+.theme-yellow .ws-metric-icon {
+  @apply bg-yellow-200/50 text-yellow-900;
+}
+
+/* Child hover effects triggered by parent .group */
+.ws-metric-card.group:hover .ws-metric-icon {
+  @apply scale-105 bg-white/20;
+}
+
+.theme-light .ws-metric-card.group:hover .ws-metric-icon {
+  @apply bg-gray-300/70 text-gray-900;
+}
+
+.theme-yellow .ws-metric-card.group:hover .ws-metric-icon {
+  @apply bg-yellow-300/70 text-yellow-900;
+}
+
+/* Metric label */
+.ws-metric-label {
+  @apply text-xs font-medium text-gray-300 leading-tight truncate;
+}
+
+.theme-light .ws-metric-label {
+  @apply text-gray-900;
+}
+
+.theme-yellow .ws-metric-label {
+  @apply text-yellow-900;
+}
+
+/* Metric value */
+.ws-metric-value {
+  @apply text-sm font-bold text-white text-right
+         min-w-0 flex-shrink-0 ml-0.5;
+}
+
+.theme-light .ws-metric-value {
+  @apply text-gray-900;
+}
+
+.theme-yellow .ws-metric-value {
+  @apply text-yellow-900;
+}
+
+/* Special styling for duration */
+.ws-metric-value.duration {
+  @apply font-mono text-xs tracking-wide;
+}
+
+/* Special styling for IP address */
+.ws-metric-value.ip-address {
+  @apply font-mono text-xs;
+}
+
+/* Last activity card */
+.ws-last-activity {
+  @apply mt-0.5 p-1 bg-white/10 rounded-lg border border-white/20
+         flex items-center justify-between text-xs
+         hover:bg-white/20 transition-all duration-200;
+}
+
+.theme-light .ws-last-activity {
+  @apply bg-gray-50/70 border-gray-200/70 hover:bg-gray-100/70;
+}
+
+.theme-yellow .ws-last-activity {
+  @apply bg-yellow-50/70 border-yellow-200/70 hover:bg-yellow-100/70;
+}
+
+.ws-last-activity .ws-metric-icon {
+  @apply w-4 h-4 p-0.5;
+}
+
+.ws-last-activity .ws-metric-label {
+  @apply text-xs font-medium;
+}
+
+.ws-last-activity .ws-metric-value {
+  @apply text-xs font-semibold;
+}
+
+/* Service information section */
+.ws-service-section {
+  @apply p-1.5 bg-white/10 backdrop-blur-sm;
+  overflow: hidden;
+}
+
+.theme-light .ws-service-section {
+  @apply bg-gray-50/50;
+}
+
+.theme-yellow .ws-service-section {
+  @apply bg-yellow-50/50;
+}
+
+/* Service info grid with dynamic width */
+.ws-service-info-grid {
+  @apply grid grid-cols-1 gap-0.5;
+}
+
+/* Service info items */
+.ws-service-info-item {
+  @apply flex justify-between items-center text-xs p-0.5 rounded-lg
+         bg-white/5 border border-white/10
+         hover:bg-white/10 transition-all duration-200
+         hover:border-white/20;
+}
+
+.theme-light .ws-service-info-item {
+  @apply bg-white/50 border-gray-200/50 hover:bg-white/70
+         hover:border-gray-300/50;
+}
+
+.theme-yellow .ws-service-info-item {
+  @apply bg-yellow-50/50 border-yellow-200/50 hover:bg-yellow-100/70
+         hover:border-yellow-300/50;
+}
+
+.ws-service-info-label {
+  @apply text-gray-300 font-medium;
+}
+
+.theme-light .ws-service-info-label {
+  @apply text-gray-900;
+}
+
+.theme-yellow .ws-service-info-label {
+  @apply text-yellow-900;
+}
+
+.ws-service-info-value {
+  @apply text-white font-semibold max-w-[200px];
+}
+
+.theme-light .ws-service-info-value {
+  @apply text-gray-900;
+}
+
+.theme-yellow .ws-service-info-value {
+  @apply text-yellow-900;
+}
+
+/* URL display with strict wrapping */
+.ws-url-value {
+  @apply text-xs font-mono bg-white/10 px-1 py-0.5 rounded
+         break-words max-w-[200px];
+}
+
+.theme-light .ws-url-value {
+  @apply bg-gray-100/80 text-gray-900;
+}
+
+.theme-yellow .ws-url-value {
+  @apply bg-yellow-100/80 text-yellow-900;
+}
+
+/* Empty state */
+.ws-empty-state {
+  @apply p-2 text-center;
+}
+
+.ws-empty-state-icon {
+  @apply w-6 h-6 mx-auto mb-0.5 p-1.5 rounded-full bg-white/10 text-gray-400;
+}
+
+.theme-light .ws-empty-state-icon {
+  @apply bg-gray-100 text-gray-900;
+}
+
+.theme-yellow .ws-empty-state-icon {
+  @apply bg-yellow-100 text-yellow-900;
+}
+
+.ws-empty-state-icon svg {
+  @apply w-full h-full stroke-current;
+}
+
+.ws-empty-state-content {
+  @apply space-y-0.5;
+}
+
+.ws-empty-state-title {
+  @apply text-sm font-semibold text-gray-200;
+}
+
+.theme-light .ws-empty-state-title {
+  @apply text-gray-900;
+}
+
+.theme-yellow .ws-empty-state-title {
+  @apply text-yellow-900;
+}
+
+.ws-empty-state-text {
+  @apply text-gray-400 text-xs;
+}
+
+.theme-light .ws-empty-state-text {
+  @apply text-gray-900;
+}
+
+.theme-yellow .ws-empty-state-text {
+  @apply text-yellow-900;
+}
+
+/* Simplified animations */
+@keyframes subtle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.ws-status-connecting .ws-icon {
+  animation: subtle-pulse 1.5s infinite ease-in-out;
+}
+
+/* Simplified hover effects */
+.ws-metric-card::before {
+  content: '';
+  @apply absolute inset-0 bg-gradient-to-r from-transparent 
+         via-white/5 to-transparent -translate-x-full 
+         transition-transform duration-500 ease-out;
+}
+
+.ws-metric-card:hover::before {
+  @apply translate-x-full;
+}
+
+.theme-light .ws-metric-card::before {
+  @apply via-gray-200/20;
+}
+
+.theme-yellow .ws-metric-card::before {
+  @apply via-yellow-200/20;
+}
+
+/* Responsive adjustments for dynamic sizing */
+@media (max-width: 640px) {
+  .websocket-status-dropdown {
+    @apply right-0 max-w-[95vw];
+  }
+  
+  .ws-dropdown-header,
+  .ws-metrics-section,
+  .ws-service-section {
+    @apply p-1;
+  }
+  
+  .ws-metric-card {
+    @apply p-0.5;
+  }
+  
+  .ws-metric-icon {
+    @apply w-3.5 h-3.5 p-0.5;
+  }
+  
+  .ws-metric-value {
+    @apply text-xs;
+  }
+  
+  .ws-url-value {
+    @apply max-w-[150px];
+  }
+}
+
+/* Glassmorphism effect */
+.websocket-status-dropdown::before {
+  content: '';
+  @apply absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-white/5
+         pointer-events-none rounded-xl;
+}
+
+.theme-light .websocket-status-dropdown::before {
+  @apply from-white/20 to-white/10;
+}
+
+.theme-yellow .websocket-status-dropdown::before {
+  @apply from-yellow-100/20 to-yellow-50/10;
+}
+
+/* Reconnect button */
+.ws-reconnect-btn {
+  @apply px-1.5 py-0.5 bg-gradient-to-r from-blue-500/20 to-blue-600/20
+         text-blue-300 rounded-lg text-xs font-medium
+         hover:from-blue-500/30 hover:to-blue-600/30
+         transition-all duration-200 border border-blue-500/30
+         hover:border-blue-400/50 hover:shadow-md
+         backdrop-blur-sm;
+}
+
+.theme-light .ws-reconnect-btn {
+  @apply from-blue-100 to-blue-200 text-blue-800 border-blue-300
+         hover:from-blue-200 hover:to-blue-300 hover:border-blue-400;
+}
+
+.theme-yellow .ws-reconnect-btn {
+  @apply from-blue-100 to-blue-200 text-blue-800 border-blue-300
+         hover:from-blue-200 hover:to-blue-300 hover:border-blue-400;
+}
+
+/* Debug section */
+.ws-debug-section {
+  @apply border-t border-white/10 bg-white/10;
+}
+
+.theme-light .ws-debug-section {
+  @apply border-gray-200/50 bg-gray-50/30;
+}
+
+.theme-yellow .ws-debug-section {
+  @apply border-yellow-200/50 bg-yellow-50/30;
+}
+
+.ws-debug-info {
+  @apply text-xs text-gray-400 space-y-0.5;
+}
+
+.theme-light .ws-debug-info {
+  @apply text-gray-900;
+}
+
+.theme-yellow .ws-debug-info {
+  @apply text-yellow-900;
+}
+
+.ws-debug-item {
+  @apply flex justify-between items-center p-0.5 rounded-lg
+         bg-white/5 border border-white/10;
+}
+
+.theme-light .ws-debug-item {
+  @apply bg-white/30 border-gray-200/30 text-gray-900;
+}
+
+.theme-yellow .ws-debug-item {
+  @apply bg-yellow-50/30 border-yellow-200/30 text-yellow-900;
+}

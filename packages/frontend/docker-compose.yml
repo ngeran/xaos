@@ -1,0 +1,70 @@
+# File Path: docker-compose.yml
+# Version: 1.1.0
+#
+# Description:
+# Updated Docker Compose configuration for Rust backend.
+# Minimal changes to support the Rust backend while maintaining Python runner.
+#
+# Key Features:
+# - Rust backend container
+# - Python runner container (unchanged)
+# - Shared volumes and networks
+# - Health checks
+#
+# Usage Guide:
+# docker-compose up -d --build
+# docker-compose logs -f rust_backend
+
+version: "3.8"
+
+services:
+  # =============================================================================
+  # RUST BACKEND SERVICE
+  # =============================================================================
+  rust_backend:
+    container_name: vlabs_rust_backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    volumes:
+      # Docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Shared directories (same as before)
+      - ${PROJECT_ROOT}/public:/public:ro
+      - ${PROJECT_ROOT}/python_pipeline:/python_pipeline:ro
+      - ${PROJECT_ROOT}/python_pipeline/tools/backup_and_restore/backups:/backups
+      - ${PROJECT_ROOT}/python_pipeline/tools/code_upgrade:/data_to_scan:ro
+      - ${PROJECT_ROOT}/python_pipeline/temp_uploads:/uploads
+    environment:
+      RUST_LOG: "debug,rust_backend=debug"
+      HOST_PROJECT_ROOT: "${PROJECT_ROOT}"
+    depends_on:
+      - python_runner
+    restart: unless-stopped
+    networks:
+      - vlabs-net
+
+  # =============================================================================
+  # PYTHON RUNNER SERVICE (UNCHANGED)
+  # =============================================================================
+  python_runner:
+    container_name: vlabs_python_runner
+    image: vlabs-python-runner
+    build:
+      context: ${PROJECT_ROOT}/python_pipeline
+      dockerfile: Dockerfile
+    command: tail -f /dev/null
+    volumes:
+      - ${PROJECT_ROOT}/python_pipeline:/python_pipeline
+      - ${PROJECT_ROOT}/python_pipeline/tools/backup_and_restore/backups:/backups
+      - ${PROJECT_ROOT}/python_pipeline/tools/code_upgrade/upgrade_path:/upgrade_images
+      - ${PROJECT_ROOT}/python_pipeline/data:/data
+      - ${PROJECT_ROOT}/python_pipeline/temp_uploads:/python_pipeline/temp_uploads
+    networks:
+      - vlabs-net
+
+networks:
+  vlabs-net:
+    driver: bridge
