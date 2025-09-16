@@ -4,7 +4,7 @@
  * Description: Styles for the main content area with improved theme support
  *              and better spacing for the modern dashboard layout.
  */
-
+ 
 /* ================================================
    APP CONTENT WRAPPER
    ================================================ */
@@ -14,13 +14,31 @@
   background: #f8fafc; /* Light gray background */
   transition: all 0.3s ease;
 }
-
+ 
 /* Dark theme support */
 [data-theme="dark"] .app-content {
   background: #0f172a; /* Dark blue-gray background */
   color: #e2e8f0; /* Light text color */
 }
-
+ 
+/* ================================================
+   WORKFLOW CONTAINER WRAPPER
+   ================================================ */
+.workflow-container-wrapper {
+  width: 100%;
+  height: calc(100vh - 64px); /* Full height minus header */
+  padding: 1rem; /* Add padding to see the rounded corners */
+  box-sizing: border-box;
+  background: transparent;
+}
+ 
+/* Remove padding on smaller screens */
+@media (max-width: 768px) {
+  .workflow-container-wrapper {
+    padding: 0;
+  }
+}
+ 
 /* ================================================
    CONTENT CONTAINER
    ================================================ */
@@ -29,7 +47,7 @@
   margin: 0 auto;
   padding: 2rem 1rem;
 }
-
+ 
 /* ================================================
    RESPONSIVE DESIGN
    ================================================ */
@@ -38,13 +56,13 @@
     padding: 1.5rem 1rem;
   }
 }
-
+ 
 @media (max-width: 640px) {
   .content-container {
     padding: 1rem 0.75rem;
   }
 }
-
+ 
 /* ================================================
    DASHBOARD SPECIFIC STYLES
    ================================================ */
@@ -54,7 +72,7 @@
   gap: 1.5rem;
   margin: 2rem 0;
 }
-
+ 
 .stat-card {
   background: white;
   border-radius: 12px;
@@ -62,17 +80,17 @@
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-
+ 
 [data-theme="dark"] .stat-card {
   background: #1e293b;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
 }
-
+ 
 .stat-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15);
 }
-
+ 
 /* ================================================
    LOADING STATES
    ================================================ */
@@ -85,11 +103,11 @@
   animation: loading-pulse 1.5s infinite;
   border-radius: 4px;
 }
-
+ 
 [data-theme="dark"] .loading-pulse {
   background: linear-gradient(90deg, #334155 25%, #475569 50%, #334155 75%);
 }
-
+ 
 @keyframes loading-pulse {
   0% {
     background-position: 200% 0;
@@ -98,7 +116,7 @@
     background-position: -200% 0;
   }
 }
-
+ 
 /* ================================================
    BUTTON STYLES
    ================================================ */
@@ -113,12 +131,12 @@
   align-items: center;
   gap: 0.5rem;
 }
-
+ 
 .action-button:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
-
+ 
 .action-button:active {
   transform: translateY(0);
 }
