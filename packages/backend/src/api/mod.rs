@@ -4,4 +4,5 @@
 pub mod navigation;
 pub mod handlers;
 pub mod websocket;
-
+pub mod inventory;
+pub mod sidebar;

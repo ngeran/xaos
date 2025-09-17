@@ -1,12 +1,19 @@
 /**
  * File Path: src/pages/Operations/Backup.jsx
- * Version: 3.0.0
+ * Version: 3.1.5
  *
  * Description:
  * Modern redesigned backup operations page with enhanced UI/UX and three-tab interface.
  * Features glassmorphism design, improved accessibility, and comprehensive light/dark mode support.
  * Uses WorkflowContainer for consistent layout with collapsible sidebar and modern tabbed interface
  * for backup configuration, execution, and results viewing.
+ * 
+ * NEW: Fetches sidebar navigation items from API endpoint instead of hardcoded values.
+ * UPDATE (v3.1.1): Added enhanced API error handling for non-JSON responses and improved sidebar error state display.
+ * UPDATE (v3.1.2): Modified fetchSidebarItems to use absolute API URL from environment variable to avoid hitting frontend dev server.
+ * UPDATE (v3.1.3): Changed environment variable access from process.env.REACT_APP_API_BASE_URL to import.meta.env.VITE_API_BASE_URL for Vite compatibility.
+ * UPDATE (v3.1.4): Switched to relative URL (/api/sidebar/backup) assuming Vite proxy is configured; added debug log for environment variable.
+ * UPDATE (v3.1.5): Added fallback to absolute URL if proxy fails; enhanced logging for request URL and response status.
  *
  * Key Features:
  * - Modern glassmorphism design with gradient overlays and backdrop blur
@@ -16,6 +23,7 @@
  * - Full light/dark mode compatibility using CSS custom properties
  * - Accessibility improvements with ARIA labels and semantic markup
  * - Smooth animations and hover effects for premium user experience
+ * - API-driven sidebar navigation items
  *
  * Architecture:
  * - Uses WorkflowContainer for consistent sidebar/main layout
@@ -23,6 +31,7 @@
  * - State management with React hooks
  * - Form validation with visual feedback
  * - CSS-in-JS styling with Tailwind utility classes
+ * - API integration for dynamic sidebar content
  *
  * How-To Guide:
  *
@@ -51,11 +60,11 @@
  * }
  * ```
  */
- 
+
 // =============================================================================
 // IMPORTS SECTION - Dependencies and external libraries
 // =============================================================================
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Home,
   Server,
@@ -75,19 +84,19 @@ import {
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
- 
+
 // =============================================================================
 // SECTION 1: MOCK COMPONENTS - Temporary implementations for demonstration
 // =============================================================================
 // NOTE: In production, these would be imported from their respective modules
- 
+
 /**
  * Mock Tooltip Component
  * Provides hover tooltips for collapsed sidebar items
  */
 const Tooltip = ({ children, content, side = "right", delayDuration = 0 }) => {
   const [isVisible, setIsVisible] = useState(false);
- 
+
   return (
     <div className="relative inline-block">
       <div
@@ -115,14 +124,14 @@ const Tooltip = ({ children, content, side = "right", delayDuration = 0 }) => {
     </div>
   );
 };
- 
+
 /**
  * Mock TooltipProvider Component
  */
 const TooltipProvider = ({ children, delayDuration = 150 }) => {
   return <>{children}</>;
 };
- 
+
 /**
  * Mock WorkflowContainer Component
  * Provides the main layout structure with sidebar and content area
@@ -134,16 +143,10 @@ const WorkflowContainer = ({
   headerContent,
   mainContent,
   onSidebarToggle,
-  className
+  className,
+  isCollapsed,
+  onHeaderToggle
 }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
- 
-  const handleToggle = () => {
-    const newState = !isCollapsed;
-    setIsCollapsed(newState);
-    onSidebarToggle?.(newState);
-  };
- 
   return (
     <TooltipProvider>
       <div className={`flex h-screen bg-background text-foreground ${className}`}>
@@ -152,31 +155,19 @@ const WorkflowContainer = ({
           {/* Sidebar Header with aligned content */}
           <div className="relative">
             {sidebarHeader}
-            {/* Collapse Toggle Button */}
-            <button
-              onClick={handleToggle}
-              className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-card border border-border rounded-full flex items-center justify-center hover:bg-accent transition-colors z-10"
-              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              {isCollapsed ? (
-                <ChevronRight className="h-3 w-3" />
-              ) : (
-                <ChevronLeft className="h-3 w-3" />
-              )}
-            </button>
           </div>
           {/* Sidebar Content */}
           <div className="flex-1 overflow-y-auto">
             {React.cloneElement(sidebarContent, { isCollapsed })}
           </div>
         </div>
- 
+
         {/* Main Content Area with rounded corners */}
         <div className="flex-1 flex flex-col overflow-hidden rounded-l-2xl ml-1">
           {/* Header with proper alignment */}
           {headerContent && (
             <header className="h-16 border-b border-border bg-background px-6 flex items-center rounded-tl-2xl">
-              {headerContent}
+              {React.cloneElement(headerContent, { isCollapsed, onHeaderToggle })}
             </header>
           )}
           {/* Main content area with rounded bottom left corner */}
@@ -188,7 +179,7 @@ const WorkflowContainer = ({
     </TooltipProvider>
   );
 };
- 
+
 /**
  * Mock NavigationItem Component
  * Renders sidebar navigation items with icons and labels
@@ -217,7 +208,7 @@ const NavigationItem = ({ icon: Icon, label, description, isActive, onClick, isC
       </div>
     </button>
   );
- 
+
   // Wrap with tooltip when collapsed
   if (isCollapsed) {
     return (
@@ -226,14 +217,14 @@ const NavigationItem = ({ icon: Icon, label, description, isActive, onClick, isC
       </Tooltip>
     );
   }
- 
+
   return content;
 };
- 
+
 // =============================================================================
 // SECTION 2: ENHANCED FORM COMPONENTS - Modern redesigned components
 // =============================================================================
- 
+
 /**
  * Modern Device Target Selector Component
  * Enhanced version of DeviceTargetSelector with glassmorphism design
@@ -261,18 +252,18 @@ const ModernDeviceTargetSelector = ({
   // --- Validation Logic ---
   // Checks if target device selection is valid
   const isTargetValid = parameters.target?.trim().length > 0;
- 
+
   // --- Event Handlers ---
   // Handles dropdown selection change
   const handleChange = (e) => {
     onParamChange("target", e.target.value);
   };
- 
+
   // --- Render Section ---
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/80 to-card backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.02] to-accent/[0.02]" />
- 
+
       {/* HEADER SECTION - Component title and status indicator */}
       <div className="relative px-6 py-5 border-b border-border/50">
         <div className="flex items-start gap-4">
@@ -293,7 +284,7 @@ const ModernDeviceTargetSelector = ({
           )}
         </div>
       </div>
- 
+
       {/* CONTENT SECTION - Form fields and validation */}
       <div className="relative p-6">
         <div className="space-y-3">
@@ -338,7 +329,7 @@ const ModernDeviceTargetSelector = ({
     </div>
   );
 };
- 
+
 /**
  * Modern Single Device Authentication Component
  * Enhanced version with improved UX and modern design patterns
@@ -365,26 +356,26 @@ const ModernSingleDeviceAuth = ({
   // --- State Management ---
   // Controls password field visibility
   const [showPassword, setShowPassword] = useState(false);
- 
+
   // --- Event Handlers ---
   // Generic handler for all input field changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     onParamChange(name, value);
   };
- 
+
   // --- Validation Logic ---
   // Individual field validation states
   const hasValidHostname = parameters.hostname?.trim().length > 0;
   const hasValidUsername = parameters.username?.trim().length > 0;
   const hasValidPassword = parameters.password?.trim().length > 0;
   const allValid = hasValidHostname && hasValidUsername && hasValidPassword;
- 
+
   // --- Render Section ---
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/80 to-card backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
       <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.02] to-purple-500/[0.02]" />
- 
+
       {/* HEADER SECTION - Title, description, and status */}
       <div className="relative px-6 py-5 border-b border-border/50">
         <div className="flex items-start gap-4">
@@ -407,7 +398,7 @@ const ModernSingleDeviceAuth = ({
           </div>
         </div>
       </div>
- 
+
       {/* FORM FIELDS SECTION - Authentication inputs with validation */}
       <div className="relative p-6 space-y-5">
         {/* HOSTNAME FIELD - Primary connection target */}
@@ -440,7 +431,7 @@ const ModernSingleDeviceAuth = ({
             </div>
           )}
         </div>
- 
+
         {/* CREDENTIALS GRID - Username and Password side by side on desktop */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* USERNAME FIELD */}
@@ -473,7 +464,7 @@ const ModernSingleDeviceAuth = ({
               </div>
             )}
           </div>
- 
+
           {/* PASSWORD FIELD with visibility toggle */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground block">
@@ -518,11 +509,11 @@ const ModernSingleDeviceAuth = ({
     </div>
   );
 };
- 
+
 // =============================================================================
 // SECTION 3: ACTION COMPONENTS - Interactive elements
 // =============================================================================
- 
+
 /**
  * Modern Execute Button Component
  * Primary action button with enhanced visual feedback and disabled states
@@ -557,7 +548,7 @@ const ExecuteButton = ({ disabled, onExecute }) => (
     </button>
   </div>
 );
- 
+
 /**
  * Tab Navigation Button Component
  * Individual tab button with icon and active states
@@ -580,31 +571,36 @@ const TabButton = ({ isActive, onClick, children, icon: Icon }) => (
     {children}
   </button>
 );
- 
+
 // =============================================================================
 // SECTION 4: MAIN BACKUP COMPONENT - Primary page component
 // =============================================================================
- 
+
 /**
  * Modern Backup Page Component
  * Main component orchestrating the entire backup interface
  *
  * Architecture:
- * - Uses WorkflowContainer for consistent layout
+ * - Uses WorkflowContainer for consistent sidebar/main layout
  * - Manages global state for form parameters and active tabs
  * - Provides three-tab interface: Settings, Execution, Results
  * - Handles form validation and user interactions
+ * - Fetches sidebar navigation items from API
  *
  * State Management:
  * - activeTab: Controls sidebar navigation
  * - backupTab: Controls main content tabs (settings/execution/results)
  * - parameters: Form data for device selection and authentication
+ * - sidebarItems: Navigation items fetched from API
+ * - loading: Loading state for API calls
+ * - error: Error state for API calls
  *
  * Features:
  * - Real-time form validation
  * - Responsive design with mobile support
  * - Light/dark mode compatibility
  * - Smooth animations and transitions
+ * - API-driven sidebar content
  */
 function ModernBackup() {
   // --- State Management ---
@@ -616,13 +612,78 @@ function ModernBackup() {
   const [parameters, setParameters] = useState({});
   // Controls sidebar collapsed state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
- 
+  // Stores sidebar navigation items fetched from API
+  const [sidebarItems, setSidebarItems] = useState([]);
+  // Loading state for API calls
+  const [loading, setLoading] = useState(true);
+  // Error state for API calls
+  const [error, setError] = useState(null);
+
   // --- Event Handlers ---
   // Updates form parameters when user inputs change
   const handleParamChange = (name, value) => {
     setParameters(prev => ({ ...prev, [name]: value }));
   };
- 
+
+  // Toggles sidebar collapsed state
+  const handleSidebarToggle = (collapsed) => {
+    setSidebarCollapsed(collapsed);
+  };
+
+  // Toggles sidebar collapsed state from header
+  const handleHeaderToggle = () => {
+    setSidebarCollapsed(!sidebarCollapsed);
+  };
+
+  // --- API Integration ---
+  // Fetch sidebar navigation items from API
+  useEffect(() => {
+    const fetchSidebarItems = async () => {
+      try {
+        setLoading(true);
+        // Debug: Log environment variable and request URL
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+        const url = '/api/sidebar/backup'; // Prefer relative URL with Vite proxy
+        console.log('Fetching sidebar items from:', url);
+        console.log('VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
+        
+        let response = await fetch(url);
+        
+        // Fallback to absolute URL if proxy fails (e.g., returns HTML)
+        if (response.headers.get('content-type')?.includes('text/html')) {
+          console.warn('Proxy failed, falling back to absolute URL:', `${apiBaseUrl}/api/sidebar/backup`);
+          response = await fetch(`${apiBaseUrl}/api/sidebar/backup`);
+        }
+        
+        // Check if response is HTML (indicating an error page)
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('Received non-JSON response:', text.substring(0, 200));
+          throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
+        }
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Sidebar items fetched successfully:', data);
+        setSidebarItems(data);
+        setError(null);
+      } catch (err) {
+        console.error('Failed to fetch sidebar items:', err);
+        setError(err.message);
+        // Keep sidebarItems empty to show error state
+        setSidebarItems([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSidebarItems();
+  }, []);
+
   // --- Mock Data ---
   // Available devices for selection (in production, this would come from an API)
   const devices = [
@@ -630,45 +691,109 @@ function ModernBackup() {
     { id: "switch-1", name: "Access Switch (10.0.0.2)" },
     { id: "firewall-1", name: "Perimeter Firewall (10.0.0.3)" }
   ];
- 
+
   // --- Validation Logic ---
   // Determines if all required fields are filled for execution
   const isReadyToExecute = parameters.target && parameters.hostname &&
                           parameters.username && parameters.password;
- 
+
+  // --- Icon Mapping ---
+  // Maps icon names from API to Lucide React components
+  const iconMap = {
+    Download,
+    Upload,
+    History,
+    Settings,
+    Server,
+    Database,
+    Shield,
+    User,
+    Lock,
+    Eye,
+    EyeOff,
+    AlertCircle,
+    Play,
+    CheckCircle,
+    Home
+  };
+
   // =============================================================================
   // SECTION 4.1: SIDEBAR CONTENT COMPONENT
   // =============================================================================
   /**
    * Sidebar Navigation Content
-   * Renders navigation items for different backup operations
+   * Renders navigation items fetched from API
+   * UPDATE (v3.1.1): Added enhanced error handling with retry button and specific error messaging
    */
   const SidebarContent = ({ activeTab, setActiveTab, isCollapsed }) => {
-    // Navigation items configuration
-    const navItems = [
-      { id: "backup", icon: Download, label: "Backup Device", description: "Create device backups" },
-      { id: "restore", icon: Upload, label: "Restore Device", description: "Restore from backup" },
-      { id: "history", icon: History, label: "Backup History", description: "View backup records" },
-      { id: "settings", icon: Settings, label: "Backup Settings", description: "Configure backup options" }
-    ];
- 
+    if (loading) {
+      return (
+        <div className="flex flex-col gap-2 p-4">
+          {[1, 2, 3, 4].map((item) => (
+            <div key={item} className="w-full p-3 rounded-lg bg-muted/50 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="h-4 w-4 bg-muted rounded"></div>
+                {!isCollapsed && (
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-muted rounded w-3/4"></div>
+                    <div className="h-3 bg-muted rounded w-1/2"></div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Show error state if API call failed
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center p-8 text-center text-destructive">
+          <AlertCircle className="h-8 w-8 mb-2" />
+          <p className="text-sm font-medium">Failed to load navigation</p>
+          <p className="text-xs text-muted-foreground mt-1">API connection error: {error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-3 py-1.5 text-xs bg-muted rounded-md hover:bg-muted/80 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+
+    // Show empty state if no sidebar items are available
+    if (sidebarItems.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
+          <AlertCircle className="h-8 w-8 mb-2" />
+          <p className="text-sm">No navigation items available</p>
+          <p className="text-xs mt-1">Check API endpoint configuration</p>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col gap-2 p-4">
-        {navItems.map((item) => (
-          <NavigationItem
-            key={item.id}
-            icon={item.icon}
-            label={item.label}
-            description={item.description}
-            isActive={activeTab === item.id}
-            onClick={() => setActiveTab(item.id)}
-            isCollapsed={isCollapsed}
-          />
-        ))}
+        {sidebarItems.map((item) => {
+          const IconComponent = iconMap[item.icon] || Settings;
+          return (
+            <NavigationItem
+              key={item.id}
+              icon={IconComponent}
+              label={item.title || item.label}
+              description={item.subtitle || item.description}
+              isActive={activeTab === item.id}
+              onClick={() => setActiveTab(item.id)}
+              isCollapsed={isCollapsed}
+            />
+          );
+        })}
       </div>
     );
   };
- 
+
   // =============================================================================
   // SECTION 4.2: HEADER CONTENT COMPONENT
   // =============================================================================
@@ -676,17 +801,31 @@ function ModernBackup() {
    * Dynamic Header Content
    * Updates title and description based on current context
    */
-  const HeaderContent = () => (
-    <div className="flex items-center justify-between w-full">
-      {/* Page Title and Description */}
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Backup Device</h1>
-        <p className="text-sm text-muted-foreground">Create a backup of your device configuration</p>
+  const HeaderContent = ({ isCollapsed, onHeaderToggle }) => (
+    <div className="flex items-center w-full">
+      {/* Collapse Toggle Button and Title */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={onHeaderToggle}
+          className="w-6 h-6 bg-card border border-border rounded-full flex items-center justify-center hover:bg-accent transition-colors z-10"
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-3 w-3" />
+          ) : (
+            <ChevronLeft className="h-3 w-3" />
+          )}
+        </button>
+
+        {/* Page Title - Smaller and next to the button */}
+        <div className="flex flex-col">
+          <h1 className="text-lg font-semibold text-foreground pt-0.5">Backup Device</h1>
+          <p className="text-xs text-muted-foreground">Create a backup of your device configuration</p>
+        </div>
       </div>
-      {/* Additional actions can be added here */}
     </div>
   );
- 
+
   // =============================================================================
   // SECTION 4.3: TAB CONTENT COMPONENTS
   // =============================================================================
@@ -697,7 +836,7 @@ function ModernBackup() {
   const BackupTabContent = () => (
     <div className="p-8 space-y-8">
       {/* SUB-TAB NAVIGATION - Settings, Execution, Results */}
-      <div className="flex items-center gap-2 p-1.5 bg-muted/50 rounded-xl w-fit">
+      <div className="flex items-center gap-2 p-1.5 bg-muted/50 rounded-xl w-fit mx-auto">
         <TabButton
           isActive={backupTab === "settings"}
           onClick={() => setBackupTab("settings")}
@@ -720,7 +859,7 @@ function ModernBackup() {
           Results
         </TabButton>
       </div>
- 
+
       {/* DYNAMIC TAB CONTENT - Changes based on active tab */}
       {/* SETTINGS TAB - Device selection, authentication, and execute button */}
       {backupTab === "settings" && (
@@ -731,13 +870,13 @@ function ModernBackup() {
             onParamChange={handleParamChange}
             devices={devices}
           />
- 
+
           {/* Device Authentication */}
           <ModernSingleDeviceAuth
             parameters={parameters}
             onParamChange={handleParamChange}
           />
- 
+
           {/* Execute Button Section */}
           <div className="pt-4 border-t border-border/50">
             <ExecuteButton
@@ -750,7 +889,7 @@ function ModernBackup() {
           </div>
         </div>
       )}
- 
+
       {/* EXECUTION TAB - Backup process interface (placeholder) */}
       {backupTab === "execution" && (
         <div className="flex items-center justify-center py-16 animate-in fade-in duration-300">
@@ -763,7 +902,7 @@ function ModernBackup() {
           </div>
         </div>
       )}
- 
+
       {/* RESULTS TAB - Backup results and logs (placeholder) */}
       {backupTab === "results" && (
         <div className="flex items-center justify-center py-16 animate-in fade-in duration-300">
@@ -778,7 +917,7 @@ function ModernBackup() {
       )}
     </div>
   );
- 
+
   // =============================================================================
   // SECTION 4.4: MAIN RENDER SECTION
   // =============================================================================
@@ -829,13 +968,15 @@ function ModernBackup() {
           )
         }
         // Event handlers and configuration
-        onSidebarToggle={(collapsed) => setSidebarCollapsed(collapsed)}
+        onSidebarToggle={handleSidebarToggle}
+        onHeaderToggle={handleHeaderToggle}
+        isCollapsed={sidebarCollapsed}
         className="min-h-screen"
       />
     </div>
   );
 }
- 
+
 // =============================================================================
 // EXPORTS SECTION
 // =============================================================================

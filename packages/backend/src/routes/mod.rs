@@ -1,10 +1,9 @@
-
 // File Path: src/routes/mod.rs
-// Version: 1.1.0
+// Version: 1.2.0
 //
 // Description:
 // Routes module that organizes all API routes into logical groups.
-// Updated to include Python execution routes.
+// Updated to include sidebar routes.
 //
 // Key Features:
 // - Modular route organization
@@ -28,6 +27,8 @@ mod navigation;
 mod websocket;
 mod reports;
 mod python;  // New Python execution routes
+mod inventory;
+mod sidebar;  // Add sidebar routes
  
 /// Creates and configures all application routes
 ///
@@ -43,7 +44,13 @@ pub fn create_routes() -> Router<AppState> {
  
         // YAML data management routes
         .merge(yaml::routes())
- 
+
+        // Inventory Routes
+        .merge(inventory::routes())
+        
+        // Sidebar configuration routes
+        .merge(sidebar::routes())
+
         // Navigation configuration routes
         .merge(navigation::routes())
  
