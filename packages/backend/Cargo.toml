@@ -5,6 +5,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow ="1.0"
 # Web framework
 axum = { version = "0.7", features = ["ws", "macros"] }
 tokio = { version = "1.0", features = ["full"] }

@@ -1,6 +1,6 @@
 /**
  * File Path: src/pages/Operations/Backup.jsx
- * Version: 3.2.0
+ * Version: 3.4.0
  *
  * Description:
  * Modern redesigned backup operations page with enhanced UI/UX and three-tab interface.
@@ -15,6 +15,8 @@
  * UPDATE (v3.1.4): Switched to relative URL (/api/sidebar/backup) assuming Vite proxy is configured; added debug log for environment variable.
  * UPDATE (v3.1.5): Added fallback to absolute URL if proxy fails; enhanced logging for request URL and response status.
  * UPDATE (v3.2.0): Enhanced content area with rounded corners and improved header alignment for better visual hierarchy.
+ * UPDATE (v3.3.0): Fixed form submission issues causing page refresh by adding proper form wrappers and event handlers.
+ * UPDATE (v3.4.0): Added global keyboard event debugging and proper event isolation to prevent page refresh.
  *
  * Key Features:
  * - Modern glassmorphism design with gradient overlays and backdrop blur
@@ -27,6 +29,8 @@
  * - API-driven sidebar navigation items
  * - Rounded content area with card-like appearance
  * - Aligned sidebar and main content headers
+ * - Fixed form submission behavior preventing page refresh
+ * - Isolated keyboard event handling
  *
  * Architecture:
  * - Uses WorkflowContainer for consistent sidebar/main layout
@@ -36,39 +40,13 @@
  * - CSS-in-JS styling with Tailwind utility classes
  * - API integration for dynamic sidebar content
  * - Card-based content layout for improved visual hierarchy
- *
- * How-To Guide:
- *
- * Basic Usage:
- * ```jsx
- * import ModernBackup from '@/pages/Operations/Backup';
- *
- * function App() {
- *   return <ModernBackup />;
- * }
- * ```
- *
- * With Theme Integration:
- * ```jsx
- * import ModernBackup from '@/pages/Operations/Backup';
- * import { ThemeProvider } from '@/contexts/ThemeContext';
- *
- * function App() {
- *   return (
- *     <ThemeProvider>
- *       <div className="min-h-screen bg-background text-foreground">
- *         <ModernBackup />
- *       </div>
- *     </ThemeProvider>
- *   );
- * }
- * ```
+ * - Proper event isolation to prevent conflicts
  */
  
 // =============================================================================
 // IMPORTS SECTION - Dependencies and external libraries
 // =============================================================================
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Home,
   Server,
@@ -236,6 +214,7 @@ const NavigationItem = ({ icon: Icon, label, description, isActive, onClick, isC
 /**
  * Modern Device Target Selector Component
  * Enhanced version of DeviceTargetSelector with glassmorphism design
+ * UPDATE (v3.3.0): Added form wrapper to prevent page refresh
  *
  * Features:
  * - Gradient background with backdrop blur
@@ -243,6 +222,7 @@ const NavigationItem = ({ icon: Icon, label, description, isActive, onClick, isC
  * - Enhanced validation with real-time feedback
  * - Improved typography and spacing
  * - Responsive design for all screen sizes
+ * - Form submission prevention
  *
  * @param {Object} parameters - Form parameters object
  * @param {Function} onParamChange - Callback for parameter changes
@@ -257,6 +237,9 @@ const ModernDeviceTargetSelector = ({
   title = "Target Device",
   description = "Select the device to backup"
 }) => {
+  // --- Component Ref ---
+  const componentRef = useRef(null);
+ 
   // --- Validation Logic ---
   // Checks if target device selection is valid
   const isTargetValid = parameters.target?.trim().length > 0;
@@ -264,12 +247,36 @@ const ModernDeviceTargetSelector = ({
   // --- Event Handlers ---
   // Handles dropdown selection change
   const handleChange = (e) => {
+    e.stopPropagation();
     onParamChange("target", e.target.value);
   };
  
+  // UPDATE (v3.3.0): Form submission handler to prevent page refresh
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  };
+ 
+  // UPDATE (v3.4.0): Isolate keyboard events
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Only process if this component contains the active element
+      if (componentRef.current && componentRef.current.contains(document.activeElement)) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+ 
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+ 
   // --- Render Section ---
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/80 to-card backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
+    <div ref={componentRef} className="group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/80 to-card backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.02] to-accent/[0.02]" />
  
       {/* HEADER SECTION - Component title and status indicator */}
@@ -294,7 +301,8 @@ const ModernDeviceTargetSelector = ({
       </div>
  
       {/* CONTENT SECTION - Form fields and validation */}
-      <div className="relative p-6">
+      {/* UPDATE (v3.3.0): Wrapped in form to prevent submission */}
+      <form onSubmit={handleFormSubmit} className="relative p-6">
         <div className="space-y-3">
           <label className="text-sm font-medium text-foreground block">
             Device Selection
@@ -333,7 +341,7 @@ const ModernDeviceTargetSelector = ({
             </div>
           )}
         </div>
-      </div>
+      </form>
     </div>
   );
 };
@@ -341,6 +349,8 @@ const ModernDeviceTargetSelector = ({
 /**
  * Modern Single Device Authentication Component
  * Enhanced version with improved UX and modern design patterns
+ * UPDATE (v3.3.0): Added form wrapper and key handlers to prevent page refresh
+ * UPDATE (v3.4.0): Added isolated event handling
  *
  * Features:
  * - Glassmorphism design with gradient backgrounds
@@ -349,6 +359,8 @@ const ModernDeviceTargetSelector = ({
  * - Responsive grid layout (stacked on mobile, side-by-side on desktop)
  * - Status indicator showing completion state
  * - Enhanced accessibility with proper ARIA labels
+ * - Form submission prevention
+ * - Isolated keyboard event handling
  *
  * @param {Object} parameters - Authentication parameters
  * @param {Function} onParamChange - Parameter change callback
@@ -365,12 +377,39 @@ const ModernSingleDeviceAuth = ({
   // Controls password field visibility
   const [showPassword, setShowPassword] = useState(false);
  
+  // --- Component Ref ---
+  const componentRef = useRef(null);
+ 
   // --- Event Handlers ---
   // Generic handler for all input field changes
   const handleChange = (e) => {
+    e.stopPropagation();
     const { name, value } = e.target;
     onParamChange(name, value);
   };
+ 
+  // UPDATE (v3.3.0): Form submission handler to prevent page refresh
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  };
+ 
+  // UPDATE (v3.4.0): Isolate keyboard events
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Only process if this component contains the active element
+      if (componentRef.current && componentRef.current.contains(document.activeElement)) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+ 
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
  
   // --- Validation Logic ---
   // Individual field validation states
@@ -381,7 +420,7 @@ const ModernSingleDeviceAuth = ({
  
   // --- Render Section ---
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/80 to-card backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
+    <div ref={componentRef} className="group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/80 to-card backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300">
       <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.02] to-purple-500/[0.02]" />
  
       {/* HEADER SECTION - Title, description, and status */}
@@ -408,7 +447,8 @@ const ModernSingleDeviceAuth = ({
       </div>
  
       {/* FORM FIELDS SECTION - Authentication inputs with validation */}
-      <div className="relative p-6 space-y-5">
+      {/* UPDATE (v3.3.0): Wrapped in form to prevent submission */}
+      <form onSubmit={handleFormSubmit} className="relative p-6 space-y-5">
         {/* HOSTNAME FIELD - Primary connection target */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground block">
@@ -421,6 +461,7 @@ const ModernSingleDeviceAuth = ({
               value={parameters.hostname || ""}
               onChange={handleChange}
               placeholder="e.g., 192.168.1.1 or router.local"
+              autoComplete="off"
               className={`w-full pl-12 pr-4 py-3.5 text-sm rounded-xl border transition-all duration-200 bg-background/50 backdrop-blur-sm focus:outline-none focus:ring-2 hover:border-muted-foreground/50 ${
                 hasValidHostname
                   ? "border-border focus:ring-ring/20 focus:border-ring"
@@ -454,6 +495,7 @@ const ModernSingleDeviceAuth = ({
                 value={parameters.username || ""}
                 onChange={handleChange}
                 placeholder="admin"
+                autoComplete="username"
                 className={`w-full pl-12 pr-4 py-3.5 text-sm rounded-xl border transition-all duration-200 bg-background/50 backdrop-blur-sm focus:outline-none focus:ring-2 hover:border-muted-foreground/50 ${
                   hasValidUsername
                     ? "border-border focus:ring-ring/20 focus:border-ring"
@@ -485,6 +527,7 @@ const ModernSingleDeviceAuth = ({
                 value={parameters.password || ""}
                 onChange={handleChange}
                 placeholder="••••••••"
+                autoComplete="current-password"
                 className={`w-full pl-12 pr-12 py-3.5 text-sm rounded-xl border transition-all duration-200 bg-background/50 backdrop-blur-sm focus:outline-none focus:ring-2 hover:border-muted-foreground/50 ${
                   hasValidPassword
                     ? "border-border focus:ring-ring/20 focus:border-ring"
@@ -513,7 +556,7 @@ const ModernSingleDeviceAuth = ({
             )}
           </div>
         </div>
-      </div>
+      </form>
     </div>
   );
 };
@@ -538,6 +581,7 @@ const ModernSingleDeviceAuth = ({
 const ExecuteButton = ({ disabled, onExecute }) => (
   <div className="flex justify-end">
     <button
+      type="button"
       onClick={onExecute}
       disabled={disabled}
       className={`group relative px-8 py-3.5 rounded-xl font-semibold text-sm transition-all duration-200 ${
@@ -568,6 +612,7 @@ const ExecuteButton = ({ disabled, onExecute }) => (
  */
 const TabButton = ({ isActive, onClick, children, icon: Icon }) => (
   <button
+    type="button"
     onClick={onClick}
     className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
       isActive
@@ -587,6 +632,8 @@ const TabButton = ({ isActive, onClick, children, icon: Icon }) => (
 /**
  * Modern Backup Page Component
  * Main component orchestrating the entire backup interface
+ * UPDATE (v3.3.0): Fixed form submission issues throughout
+ * UPDATE (v3.4.0): Added keyboard event debugging and isolation
  *
  * Architecture:
  * - Uses WorkflowContainer for consistent sidebar/main layout
@@ -609,8 +656,10 @@ const TabButton = ({ isActive, onClick, children, icon: Icon }) => (
  * - Light/dark mode compatibility
  * - Smooth animations and transitions
  * - API-driven sidebar content
- * - Rounded content area with card-like appearance (v3.2.0)
- * - Aligned headers for better visual consistency (v3.2.0)
+ * - Rounded content area with card-like appearance
+ * - Aligned headers for better visual consistency
+ * - Form submission prevention
+ * - Isolated keyboard event handling
  */
 function ModernBackup() {
   // --- State Management ---
@@ -644,6 +693,43 @@ function ModernBackup() {
   const handleHeaderToggle = () => {
     setSidebarCollapsed(!sidebarCollapsed);
   };
+ 
+  // UPDATE (v3.4.0): Global keyboard event debugging
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      // Debug logging for keyboard events
+      if (e.key.toLowerCase() === 'a' && document.activeElement.tagName === 'INPUT') {
+        console.log('[DEBUG] A key pressed in input:', {
+          key: e.key,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          target: e.target,
+          targetName: e.target.name,
+          defaultPrevented: e.defaultPrevented
+        });
+      }
+ 
+      // Prevent any global shortcuts when typing in form fields
+      if (document.activeElement &&
+          (document.activeElement.tagName === 'INPUT' ||
+           document.activeElement.tagName === 'SELECT' ||
+           document.activeElement.tagName === 'TEXTAREA')) {
+        // Stop propagation for any modified key combinations
+        if (e.ctrlKey || e.altKey || e.metaKey) {
+          e.stopPropagation();
+        }
+      }
+    };
+ 
+    // Add listener in capture phase to intercept early
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+ 
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    };
+  }, []);
  
   // --- API Integration ---
   // Fetch sidebar navigation items from API
@@ -817,6 +903,7 @@ function ModernBackup() {
       {/* Collapse Toggle Button and Title */}
       <div className="flex items-center gap-4">
         <button
+          type="button"
           onClick={onHeaderToggle}
           className="w-6 h-6 bg-card border border-border rounded-full flex items-center justify-center hover:bg-accent transition-colors z-10"
           aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
