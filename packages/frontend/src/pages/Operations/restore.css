@@ -1,0 +1,16 @@
+/**
+ * File Path: src/pages/Operations/Backup/backup.css
+ * Version: 1.0.0
+ * Description: CSS styles for the Backup page with dark/light mode support.
+ * 
+ * Key Features:
+ * - Comprehensive dark and light mode support
+ * - Responsive design for all screen sizes
+ * - Smooth transitions and animations
+ * - Consistent styling with the application theme
+ * 
+ * How-To Guide:
+ * 1. This file is automatically imported by Backup.jsx
+ * 2. Styles are applied based on the parent theme context
+ * 3. Custom properties are defined for consistent theming
+ */

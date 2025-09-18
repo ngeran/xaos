@@ -26,6 +26,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 // Import pages
 import Home from '../../../pages/Home.jsx';
 import Backup from '../../../pages/Operations/Backup.jsx';
+import Restore from '../../../pages/Operations/Restore.jsx';
 
 // ================================================
 // CONTENT COMPONENT
@@ -62,6 +63,7 @@ const Content = ({
           } 
         />
         <Route path="/operations/backups" element={<Backup />} />
+        <Route path="/operations/restore" element={<Restore />} />
         {/* Add new routes here following the same pattern */}
       </Routes>
     </BrowserRouter>
