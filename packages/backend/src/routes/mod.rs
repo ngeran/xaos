@@ -1,9 +1,9 @@
 // File Path: src/routes/mod.rs
-// Version: 1.2.0
+// Version: 1.3.0
 //
 // Description:
 // Routes module that organizes all API routes into logical groups.
-// Updated to include sidebar routes.
+// Updated to include sidebar and backups routes.
 //
 // Key Features:
 // - Modular route organization
@@ -16,10 +16,10 @@
 // 1. Create a new module in the routes directory
 // 2. Import it here
 // 3. Add it to the merge chain in create_routes()
- 
+
 use axum::Router;
 use crate::AppState;
- 
+
 // Route modules
 mod health;
 mod yaml;
@@ -29,7 +29,8 @@ mod reports;
 mod python;  // New Python execution routes
 mod inventory;
 mod sidebar;  // Add sidebar routes
- 
+mod backups;  // Add backups routes
+
 /// Creates and configures all application routes
 ///
 /// This function assembles all route modules into a single router,
@@ -41,25 +42,28 @@ pub fn create_routes() -> Router<AppState> {
     Router::new()
         // Health monitoring routes
         .merge(health::routes())
- 
+
         // YAML data management routes
         .merge(yaml::routes())
 
         // Inventory Routes
         .merge(inventory::routes())
         
+        // Backups Routes
+        .merge(backups::routes())
+        
         // Sidebar configuration routes
         .merge(sidebar::routes())
 
         // Navigation configuration routes
         .merge(navigation::routes())
- 
+
         // Reports management routes
         .merge(reports::routes())
- 
+
         // WebSocket communication routes
         .merge(websocket::routes())
- 
+
         // Python script execution routes
         .merge(python::routes())
 }
