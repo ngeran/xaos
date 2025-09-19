@@ -53,5 +53,5 @@
       url: /operations/backups
       icon: "💾"
     - title: Restore Configurations
-      url: /operations/restores
+      url: /operations/restore
       icon: "♻️"

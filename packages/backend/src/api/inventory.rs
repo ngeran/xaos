@@ -1,12 +1,12 @@
 // File Path: src/api/inventory.rs
-// Version: 1.1.0
+// Version: 1.3.0
 //
 // Description:
 // API handlers for accessing the network inventory (routers, switches, firewalls).
 //
 // Key Features:
 // - Loads inventory.yaml using YamlService
-// - Lists all YAML files in the inventories directory
+// - Lists all YAML files in the shared/data/inventories directory
 // - Returns structured JSON response
 // - Provides error handling for missing/invalid YAML
 //
@@ -15,6 +15,8 @@
 // GET /api/inventory/list → lists all inventory YAML files
 //
 // Change Log:
+// - 1.3.0: Fixed path consistency issues
+// - 1.2.0: Fixed path handling for shared/data structure
 // - 1.1.0: Added list_inventory_files endpoint
 // - 1.0.0: Initial implementation
 
@@ -24,7 +26,7 @@ use std::path::Path;
 use tokio::fs;
 
 use crate::{AppState, models::ApiResult};
-use crate::models::ApiError; // ← Make sure this is present
+use crate::models::ApiError;
 
 // =============================================================================
 // Inventory Data Retrieval
@@ -33,10 +35,11 @@ use crate::models::ApiError; // ← Make sure this is present
 
 /// Handler to return the full inventory
 pub async fn get_inventory(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    // Load inventory.yaml from shared/data
+    // Load inventory.yaml from shared/data/inventories - FIXED PATH
     let data = state.yaml_service
-        .get_yaml_data("inventory", None)
-        .await?;
+        .get_yaml_data("inventories/inventory", None)
+        .await
+        .map_err(|e| ApiError::YamlParseError(format!("Failed to load inventory: {}", e)))?;
 
     Ok(Json(data))
 }
@@ -46,29 +49,32 @@ pub async fn get_inventory(State(state): State<AppState>) -> ApiResult<Json<Valu
 // =============================================================================
 // Handlers for discovering and listing available inventory files
 
-/// Handler to list all YAML files in the inventories directory
-pub async fn list_inventory_files(State(_state): State<AppState>) -> ApiResult<Json<Value>> {
-    // Define the inventories directory path
-    let inventories_path = Path::new("data/inventories");
+/// Handler to list all YAML files in the shared/data/inventories directory
+pub async fn list_inventory_files() -> ApiResult<Json<Value>> {
+    // Define the inventories directory path - FIXED FOR shared/data STRUCTURE
+    let inventories_path = Path::new("../shared/data/inventories");
 
     // Check if directory exists
     if !inventories_path.exists() {
         return Ok(Json(json!({
             "files": [],
-            "message": "Inventories directory not found"
+            "message": "Inventories directory not found",
+            "path": "../shared/data/inventories",
+            "absolute_path": inventories_path.canonicalize().ok().and_then(|p| p.to_str().map(|s| s.to_string()))
         })));
     }
 
-    // -- unchanged code above --
+    // Debug: print the actual path being checked
+    println!("Checking inventory path: {:?}", inventories_path);
+    println!("Absolute path: {:?}", inventories_path.canonicalize());
 
     // Read directory contents
-    let mut entries = fs::read_dir(inventories_path).await?;  // ✅ removed map_err
+    let mut entries = fs::read_dir(inventories_path).await?;
 
     let mut yaml_files = Vec::new();
 
     // Iterate through directory entries
-    while let Some(entry) = entries.next_entry().await? { // ✅ removed map_err
-
+    while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
 
         // Check if it's a file with .yaml or .yml extension
@@ -87,7 +93,7 @@ pub async fn list_inventory_files(State(_state): State<AppState>) -> ApiResult<J
                         .to_string();
 
                     // Get file metadata
-                    let metadata = entry.metadata().await?;  // ✅ removed map_err
+                    let metadata = entry.metadata().await?;
 
                     yaml_files.push(json!({
                         "name": file_name,
@@ -104,7 +110,6 @@ pub async fn list_inventory_files(State(_state): State<AppState>) -> ApiResult<J
         }
     }
 
-
     // Sort files by name
     yaml_files.sort_by(|a, b| {
         a.get("name").and_then(|v| v.as_str()).unwrap_or("")
@@ -114,7 +119,7 @@ pub async fn list_inventory_files(State(_state): State<AppState>) -> ApiResult<J
     Ok(Json(json!({
         "files": yaml_files,
         "count": yaml_files.len(),
-        "path": "data/inventories"
+        "path": "../shared/data/inventories"
     })))
 }
 

@@ -3,10 +3,16 @@
  * DEVICE AUTHENTICATION FIELDS COMPONENT
  * =============================================================================
  *
+ * File Path: src/shared/DeviceAuthFields.jsx
+ * Version: 3.1.1
+ *
  * DESCRIPTION:
  * A modern, accessible authentication component featuring username and password
  * fields with real-time validation, password visibility toggle, and elegant
  * shadcn/ui-inspired styling with subtle animations and micro-interactions.
+ *
+ * UPDATE (v3.1.1): Added form wrapper and keydown event handling to prevent page refreshes
+ * on input, ensuring Enter key and other keypresses do not trigger unwanted form submissions.
  *
  * KEY FEATURES:
  * • Real-time field validation with visual feedback
@@ -16,9 +22,10 @@
  * • Modern glassmorphism design with gradient backgrounds
  * • Animated validation messages and icons
  * • Customizable theming and styling options
+ * • Form submission prevention for input fields
  *
  * DEPENDENCIES:
- * • react: ^18.0.0 (useState hook for state management)
+ * • react: ^18.0.0 (useState, useEffect hooks for state management)
  * • lucide-react: ^0.263.1 (User, Lock, Shield, Eye, EyeOff icons)
  * • tailwindcss: ^3.0.0 (utility-first CSS framework)
  *
@@ -45,7 +52,7 @@
  * ```
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { User, Lock, Shield, Eye, EyeOff } from "lucide-react";
 
 // =============================================================================
@@ -64,6 +71,7 @@ export default function DeviceAuthFields({
   // =============================================================================
   // Manages password visibility toggle state
   const [showPassword, setShowPassword] = useState(false);
+  const componentRef = useRef(null);
 
   // =============================================================================
   // VALIDATION LOGIC SECTION
@@ -77,12 +85,38 @@ export default function DeviceAuthFields({
   // =============================================================================
   // Handles input field changes and propagates to parent component
   const handleInputChange = (e) => {
+    e.stopPropagation();
     const { name, value } = e.target;
     onParamChange(name, value);
   };
 
   // Toggles password visibility with state update
-  const togglePasswordVisibility = () => setShowPassword(prev => !prev);
+  const togglePasswordVisibility = (e) => {
+    e.stopPropagation();
+    setShowPassword(prev => !prev);
+  };
+
+  // Prevents default form submission
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  };
+
+  // Prevents Enter key from triggering page refresh
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (componentRef.current && componentRef.current.contains(document.activeElement)) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
 
   // =============================================================================
   // STYLING HELPERS SECTION
@@ -113,7 +147,6 @@ export default function DeviceAuthFields({
       bg-card border rounded-xl shadow-sm backdrop-blur-sm
       ${className}
     `.trim()}>
-
       {/* HEADER SECTION - Title, description, and security indicator */}
       <div className="px-6 py-4 border-b">
         <div className="flex items-center justify-between">
@@ -136,9 +169,8 @@ export default function DeviceAuthFields({
       </div>
 
       {/* FORM FIELDS SECTION - Username and password inputs with validation */}
-      <div className="p-6">
+      <form onSubmit={handleFormSubmit} ref={componentRef} className="p-6">
         <div className="grid gap-4 md:grid-cols-2">
-
           {/* Username Input Field */}
           <div className="space-y-2">
             <div className="relative">
@@ -197,7 +229,7 @@ export default function DeviceAuthFields({
             )}
           </div>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
