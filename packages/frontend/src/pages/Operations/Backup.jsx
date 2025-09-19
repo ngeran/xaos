@@ -1,6 +1,6 @@
 /**
  * File Path: src/pages/Operations/Backup.jsx
- * Version: 3.6.4
+ * Version: 3.6.5
  *
  * Description:
  * Modern redesigned backup operations page with enhanced UI/UX and tab-based interface.
@@ -25,6 +25,7 @@
  * UPDATE (v3.6.2): Removed fallback sidebar items in fetchSidebarItems, relying solely on API response. Confirmed dark mode background remains black (dark:bg-black) across all components.
  * UPDATE (v3.6.3): Removed "Device Configuration Restore Tool" title and description from restore tab. Fixed duplicate tab panels in RestoreForm, ensuring a single set of tabs (Restore, Execute, Results) with the 1, 2, 3 step indicator.
  * UPDATE (v3.6.4): Removed <TabsList> component (tab navigation bar) from restore tab, retaining step indicator and <TabsContent> for Restore, Execute, Results. Navigation now relies on buttons and programmatic state changes.
+ * UPDATE (v3.6.5): Updated backup API integration to use new endpoints: /api/backups/devices and /api/backups/device/:device_name. Fixed data mapping to match actual API response format.
  *
  * Key Features:
  * - Modern glassmorphism design with gradient overlays and backdrop blur
@@ -117,6 +118,20 @@ const ANIMATION_DURATION = {
   fast: 150,
   normal: 200,
   slow: 300
+};
+
+// Helper function to format file size
+const formatFileSize = (bytes) => {
+  if (!bytes) return 'Unknown';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+// Helper function to format timestamp
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return 'Unknown';
+  return new Date(timestamp * 1000).toLocaleDateString();
 };
 
 // =============================================================================
@@ -581,7 +596,7 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
             background: #4b5563;
           }
           .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #6b7280;
+            background: 6b7280;
           }
         `}</style>
       </div>
@@ -605,6 +620,7 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
  * UPDATE (v3.6.2): Removed fallback sidebar items in fetchSidebarItems
  * UPDATE (v3.6.3): Removed "Device Configuration Restore Tool" title; fixed duplicate tab panels in restore
  * UPDATE (v3.6.4): Removed <TabsList> from restore tab, keeping step indicator and programmatic navigation
+ * UPDATE (v3.6.5): Updated backup API integration to use new endpoints and data mapping
  *
  * Architecture:
  * - Uses WorkflowContainer for consistent sidebar/main layout
@@ -820,18 +836,19 @@ function ModernBackup() {
       setErrorRestore(null);
       try {
         const response = await fetch(`${API_BASE_URL}/api/backups/devices`);
-        const data = await response.json();
-        if (data.success && data.devices) {
-          const hostOptions = data.devices.map(device => ({
-            value: device.hostname,
-            label: device.hostname,
-            description: device.description || `IP: ${device.ip || 'Unknown'}`
-          }));
-          setHosts(hostOptions);
-        } else {
-          setHosts([]);
-          toast.error("No host devices found.");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
+        const data = await response.json();
+        
+        // Map the API response to the expected format
+        const hostOptions = data.devices.map(device => ({
+          value: device.name, // Use device.name from the API response
+          label: device.name,
+          description: `Backups: ${device.backup_count || 0}`
+        }));
+        setHosts(hostOptions);
+        
       } catch (error) {
         console.error('Error fetching hosts:', error);
         setErrorRestore('Failed to load host devices');
@@ -858,21 +875,20 @@ function ModernBackup() {
       setLoadingBackups(true);
       setErrorRestore(null);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/backups/host/${selectedHost}`);
-        const data = await response.json();
-        if (data.success && data.backups) {
-          const backupOptions = data.backups.map(backup => ({
-            value: backup.value,
-            label: backup.label,
-            description: backup.description || `Size: ${backup.size || 'Unknown'} • Created: ${backup.date || 'Unknown'}`
-          }));
-          setBackups(backupOptions);
-        } else {
-          setBackups([]);
-          if (data.backups && data.backups.length === 0) {
-            toast.error(`No backups found for host: ${selectedHost}`);
-          }
+        const response = await fetch(`${API_BASE_URL}/api/backups/device/${selectedHost}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
+        const data = await response.json();
+        
+        // Map the API response to the expected format
+        const backupOptions = data.backups.map(backup => ({
+          value: backup.name, // Use backup.name from the API response
+          label: backup.name,
+          description: `Size: ${formatFileSize(backup.size)} • Modified: ${formatTimestamp(backup.modified)}`
+        }));
+        setBackups(backupOptions);
+        
       } catch (error) {
         console.error('Error fetching backups:', error);
         setErrorRestore('Failed to load backup files');
@@ -1041,7 +1057,7 @@ function ModernBackup() {
           className="w-6 h-6 bg-card dark:bg-black border border-border dark:border-gray-700 rounded-full flex items-center justify-center hover:bg-accent dark:hover:bg-gray-700 transition-colors z-10"
           aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {isCollapsed ? (
+            {isCollapsed ? (
             <ChevronRight className="h-3 w-3" />
           ) : (
             <ChevronLeft className="h-3 w-3" />
@@ -1256,7 +1272,7 @@ function ModernBackup() {
                   <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-md">
                     <div className="flex items-center">
                       <div className="h-10 w-10 flex items-center justify-center rounded-full bg-amber-100 dark:bg-amber-800/30">
-                        <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="h-6 w-6 text-amber-600 dark:bg-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
                       </div>
