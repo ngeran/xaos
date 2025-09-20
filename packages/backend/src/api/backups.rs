@@ -1,38 +1,47 @@
+// =========================================================================================
 // File Path: src/api/backups.rs
-// Version: 1.0.0
+// Version: 1.2.0
 //
 // Description:
-// API handlers for accessing configuration backups.
+// API handlers for managing configuration backups. Includes both file-system access
+// (list devices, list backup files, read file content) and execution of the Python
+// BackupConfig worker script.
 //
 // Key Features:
-// - Lists all device folders in shared/data/backups directory
-// - Lists all backup files for a specific device
-// - Returns backup file content as text
-// - Provides error handling for missing files/directories
+// - List all device folders in shared/data/backups
+// - List all backup files for a specific device
+// - Read backup file content as plain text
+// - Trigger Python backup worker via POST /api/backups/run
 //
 // Usage Guide:
-// GET /api/backups/devices → lists all device folders
-// GET /api/backups/device/:device_name → lists backup files for a device
-// GET /api/backups/file/:device_name/:filename → returns backup file content
+// GET  /api/backups/devices                → list all devices with backups
+// GET  /api/backups/device/:device_name    → list backup files for a device
+// GET  /api/backups/file/:device/:file     → return file content
+// POST /api/backups/run                     → execute backup (hostname, username, password)
+//
+// Change Log:
+// - 1.2.0: Fixed route registration and error handling
+// - 1.1.0: Added run_backup endpoint
+// - 1.0.0: Initial implementation
+// =========================================================================================
 
-use axum::response::Json;
+use axum::{extract::State, response::Json};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
-use tokio::fs;
+use tokio::{fs, process::Command};
 
-use crate::models::ApiResult;
-use crate::models::ApiError;
+use crate::models::{ApiError, ApiResult};
+use crate::AppState;
 
-// =============================================================================
-// Backup Devices Listing
-// =============================================================================
+// =========================================================================================
+// SECTION 1: BACKUP DEVICES LISTING
+// Lists all device folders in the backups directory
+// =========================================================================================
 
-/// Handler to list all device folders in the backups directory
 pub async fn list_backup_devices() -> ApiResult<Json<Value>> {
-    // Define the backups directory path
     let backups_path = Path::new("../shared/data/backups");
 
-    // Check if directory exists
     if !backups_path.exists() {
         return Ok(Json(json!({
             "devices": [],
@@ -42,21 +51,15 @@ pub async fn list_backup_devices() -> ApiResult<Json<Value>> {
         })));
     }
 
-    // Read directory contents
     let mut entries = fs::read_dir(backups_path).await?;
     let mut device_folders = Vec::new();
 
-    // Iterate through directory entries
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
 
-        // Check if it's a directory (device folder)
         if path.is_dir() {
             if let Some(device_name) = path.file_name().and_then(|n| n.to_str()) {
-                // Get directory metadata
                 let metadata = entry.metadata().await?;
-                
-                // Count backup files in the device directory
                 let backup_count = count_backup_files(&path).await.unwrap_or(0);
 
                 device_folders.push(json!({
@@ -73,7 +76,6 @@ pub async fn list_backup_devices() -> ApiResult<Json<Value>> {
         }
     }
 
-    // Sort devices by name
     device_folders.sort_by(|a, b| {
         a.get("name").and_then(|v| v.as_str()).unwrap_or("")
             .cmp(b.get("name").and_then(|v| v.as_str()).unwrap_or(""))
@@ -86,34 +88,31 @@ pub async fn list_backup_devices() -> ApiResult<Json<Value>> {
     })))
 }
 
-// =============================================================================
-// Device Backup Files Listing
-// =============================================================================
+// =========================================================================================
+// SECTION 2: DEVICE BACKUP FILES LISTING
+// Lists backup files inside a specific device folder
+// =========================================================================================
 
-/// Handler to list backup files for a specific device
 pub async fn list_device_backups(
     axum::extract::Path(device_name): axum::extract::Path<String>
 ) -> ApiResult<Json<Value>> {
-    // Construct the device backup directory path
     let device_path = Path::new("../shared/data/backups").join(&device_name);
 
-    // Check if device directory exists
     if !device_path.exists() {
-        return Err(ApiError::NotFound(format!("Device '{}' not found in backups", device_name)));
+        return Err(ApiError::NotFound(format!(
+            "Device '{}' not found in backups",
+            device_name
+        )));
     }
 
-    // Read directory contents
     let mut entries = fs::read_dir(&device_path).await?;
     let mut backup_files = Vec::new();
 
-    // Iterate through directory entries
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
 
-        // Check if it's a file (backup file)
         if path.is_file() {
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                // Get file metadata
                 let metadata = entry.metadata().await?;
 
                 backup_files.push(json!({
@@ -130,11 +129,10 @@ pub async fn list_device_backups(
         }
     }
 
-    // Sort files by modification time (newest first)
     backup_files.sort_by(|a, b| {
         let a_modified = a.get("modified").and_then(|v| v.as_u64()).unwrap_or(0);
         let b_modified = b.get("modified").and_then(|v| v.as_u64()).unwrap_or(0);
-        b_modified.cmp(&a_modified) // Descending order
+        b_modified.cmp(&a_modified)
     });
 
     Ok(Json(json!({
@@ -145,35 +143,84 @@ pub async fn list_device_backups(
     })))
 }
 
-// =============================================================================
-// Backup File Content Access
-// =============================================================================
+// =========================================================================================
+// SECTION 3: BACKUP FILE CONTENT ACCESS
+// Returns the plain text content of a backup file
+// =========================================================================================
 
-/// Handler to get a specific backup file content
 pub async fn get_backup_file(
     axum::extract::Path((device_name, filename)): axum::extract::Path<(String, String)>
 ) -> ApiResult<String> {
-    // Construct the backup file path
     let file_path = Path::new("../shared/data/backups")
         .join(&device_name)
         .join(&filename);
 
-    // Check if file exists
     if !file_path.exists() {
-        return Err(ApiError::NotFound(format!("Backup file '{}' not found for device '{}'", filename, device_name)));
+        return Err(ApiError::NotFound(format!(
+            "Backup file '{}' not found for device '{}'",
+            filename, device_name
+        )));
     }
 
-    // Read file content as text
     let content = fs::read_to_string(&file_path).await?;
-
     Ok(content)
 }
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
+// =========================================================================================
+// SECTION 4: RUN BACKUP HANDLER
+// Executes the Python BackupConfig worker for a given device
+// =========================================================================================
 
-/// Count backup files in a device directory
+#[derive(Deserialize)]
+pub struct BackupRequest {
+    pub hostname: String,
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Serialize)]
+pub struct BackupResponse {
+    pub status: String,
+    pub message: String,
+    pub logs: Option<String>,
+    pub files: Option<Value>,
+}
+
+pub async fn run_backup(
+    State(_state): State<AppState>,
+    Json(payload): Json<BackupRequest>,
+) -> ApiResult<Json<BackupResponse>> {
+    let output = Command::new("python3")
+        .arg("BackupConfig.py")
+        .arg(&payload.hostname)
+        .arg(&payload.username)
+        .arg(&payload.password)
+        .output()
+        .await
+        .map_err(|e| ApiError::ExecutionError(format!("Failed to run BackupConfig.py: {}", e)))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    let status = if output.status.success() { "SUCCESS" } else { "FAILED" };
+    let message = if output.status.success() {
+        format!("Backup for {} completed successfully", payload.hostname)
+    } else {
+        format!("Backup for {} failed", payload.hostname)
+    };
+
+    Ok(Json(BackupResponse {
+        status: status.into(),
+        message,
+        logs: Some(format!("stdout:\n{}\nstderr:\n{}", stdout, stderr)),
+        files: None, // could parse JSON output later
+    }))
+}
+
+// =========================================================================================
+// SECTION 5: HELPER FUNCTIONS
+// =========================================================================================
+
 async fn count_backup_files(device_path: &Path) -> Result<usize, std::io::Error> {
     let mut entries = fs::read_dir(device_path).await?;
     let mut count = 0;

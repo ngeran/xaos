@@ -22,21 +22,19 @@ services:
   # RUST BACKEND SERVICE
   # =============================================================================
   rust_backend:
-    container_name: vlabs_rust_backend
+    container_name: rust_backend
     build:
-      context: ./backend
+      context: ./packages/backend
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "3002:3002"
     volumes:
       # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Shared directories (same as before)
-      - ${PROJECT_ROOT}/public:/public:ro
-      - ${PROJECT_ROOT}/python_pipeline:/python_pipeline:ro
-      - ${PROJECT_ROOT}/python_pipeline/tools/backup_and_restore/backups:/backups
-      - ${PROJECT_ROOT}/python_pipeline/tools/code_upgrade:/data_to_scan:ro
-      - ${PROJECT_ROOT}/python_pipeline/temp_uploads:/uploads
+      # Map the new shared data directory
+      - ./packages/shared:/app/shared:ro
+      # Map the python scripts needed for execution
+      - ./packages/frontend/xaospy:/app/xaospy:ro
     environment:
       RUST_LOG: "debug,rust_backend=debug"
       HOST_PROJECT_ROOT: "${PROJECT_ROOT}"
@@ -47,21 +45,20 @@ services:
       - vlabs-net
 
   # =============================================================================
-  # PYTHON RUNNER SERVICE (UNCHANGED)
+  # PYTHON RUNNER SERVICE
   # =============================================================================
   python_runner:
-    container_name: vlabs_python_runner
-    image: vlabs-python-runner
+    container_name: python_runner
+    image: python-runner
     build:
-      context: ${PROJECT_ROOT}/python_pipeline
+      context: ./packages/frontend/xaospy
       dockerfile: Dockerfile
     command: tail -f /dev/null
     volumes:
-      - ${PROJECT_ROOT}/python_pipeline:/python_pipeline
-      - ${PROJECT_ROOT}/python_pipeline/tools/backup_and_restore/backups:/backups
-      - ${PROJECT_ROOT}/python_pipeline/tools/code_upgrade/upgrade_path:/upgrade_images
-      - ${PROJECT_ROOT}/python_pipeline/data:/data
-      - ${PROJECT_ROOT}/python_pipeline/temp_uploads:/python_pipeline/temp_uploads
+      # Map the python project directory
+      - ./packages/frontend/xaospy:/xaospy
+      # Map the shared data directory
+      - ./packages/shared:/shared
     networks:
       - vlabs-net
 

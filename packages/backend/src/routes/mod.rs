@@ -1,9 +1,11 @@
+
+// =========================================================================================
 // File Path: src/routes/mod.rs
-// Version: 1.3.0
+// Version: 1.4.0
 //
 // Description:
 // Routes module that organizes all API routes into logical groups.
-// Updated to include sidebar and backups routes.
+// Updated to include sidebar, backups, and restore routes.
 //
 // Key Features:
 // - Modular route organization
@@ -16,6 +18,11 @@
 // 1. Create a new module in the routes directory
 // 2. Import it here
 // 3. Add it to the merge chain in create_routes()
+//
+// Change Log:
+// - 1.4.0: Added restore routes
+// - 1.3.0: Added sidebar and backups routes
+// =========================================================================================
 
 use axum::Router;
 use crate::AppState;
@@ -26,10 +33,11 @@ mod yaml;
 mod navigation;
 mod websocket;
 mod reports;
-mod python;  // New Python execution routes
+mod python;    // Python execution routes
 mod inventory;
-mod sidebar;  // Add sidebar routes
-mod backups;  // Add backups routes
+mod sidebar;   // Sidebar routes
+mod backups;   // Backup routes
+mod restore;   // ✅ New restore routes
 
 /// Creates and configures all application routes
 ///
@@ -51,7 +59,10 @@ pub fn create_routes() -> Router<AppState> {
         
         // Backups Routes
         .merge(backups::routes())
-        
+
+        // Restore Routes
+        .merge(restore::routes())
+
         // Sidebar configuration routes
         .merge(sidebar::routes())
 

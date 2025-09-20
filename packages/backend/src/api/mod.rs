@@ -7,3 +7,4 @@ pub mod websocket;
 pub mod inventory;
 pub mod sidebar;
 pub mod backups;
+pub mod restore;

@@ -1,6 +1,6 @@
 /**
  * File Path: src/pages/Operations/Backup.jsx
- * Version: 3.6.5
+ * Version: 3.6.6
  *
  * Description:
  * Modern redesigned backup operations page with enhanced UI/UX and tab-based interface.
@@ -9,23 +9,9 @@
  * for backup and restore operations, including configuration, execution, and results viewing.
  *
  * NEW: Fetches sidebar navigation items from API endpoint instead of hardcoded values.
- * UPDATE (v3.1.1): Added enhanced API error handling for non-JSON responses and improved sidebar error state display.
- * UPDATE (v3.1.2): Modified fetchSidebarItems to use absolute API URL from environment variable to avoid hitting frontend dev server.
- * UPDATE (v3.1.3): Changed environment variable access from process.env.REACT_APP_API_BASE_URL to import.meta.env.VITE_API_BASE_URL for Vite compatibility.
- * UPDATE (v3.1.4): Switched to relative URL (/api/sidebar/backup) assuming Vite proxy is configured; added debug log for environment variable.
- * UPDATE (v3.1.5): Added fallback to absolute URL if proxy fails; enhanced logging for request URL and response status.
- * UPDATE (v3.2.0): Enhanced content area with rounded corners and improved header alignment for better visual hierarchy.
- * UPDATE (v3.3.0): Fixed form submission issues causing page refresh by adding proper form wrappers and event handlers.
- * UPDATE (v3.4.0): Added global keyboard event debugging and proper event isolation to prevent page refresh.
- * UPDATE (v3.4.1): Integrated DeviceTargetSelector and DeviceAuthFields for consistency with Restore.jsx.
- * UPDATE (v3.4.2): Ensured DeviceTargetSelector and DeviceAuthFields prevent page refreshes on input by wrapping inputs in forms with proper event handling.
- * UPDATE (v3.5.0): Replaced MultiTabInterface with step-based navigation to align with Restore.jsx, fixing page refresh on input by avoiding tab component remounting issues.
- * UPDATE (v3.6.0): Replaced step-based navigation with tab panels (Restore, Execute, Results) for "Restore Device" functionality, integrating enhanced RestoreForm with API-fetched dropdowns. Added 1, 2, 3 circle-based step indicator for consistency with backup interface.
- * UPDATE (v3.6.1): Fixed dark mode background to use black (dark:bg-black) instead of dark blue (dark:bg-gray-900). Corrected duplicate sidebar entries for "Backup Device" and "Restore Device" by removing mock data concatenation in fetchSidebarItems.
- * UPDATE (v3.6.2): Removed fallback sidebar items in fetchSidebarItems, relying solely on API response. Confirmed dark mode background remains black (dark:bg-black) across all components.
- * UPDATE (v3.6.3): Removed "Device Configuration Restore Tool" title and description from restore tab. Fixed duplicate tab panels in RestoreForm, ensuring a single set of tabs (Restore, Execute, Results) with the 1, 2, 3 step indicator.
  * UPDATE (v3.6.4): Removed <TabsList> component (tab navigation bar) from restore tab, retaining step indicator and <TabsContent> for Restore, Execute, Results. Navigation now relies on buttons and programmatic state changes.
  * UPDATE (v3.6.5): Updated backup API integration to use new endpoints: /api/backups/devices and /api/backups/device/:device_name. Fixed data mapping to match actual API response format.
+ * UPDATE (v3.6.6): Fixed header alignment between sidebar and main content headers for better visual consistency.
  *
  * Key Features:
  * - Modern glassmorphism design with gradient overlays and backdrop blur
@@ -196,6 +182,7 @@ const TooltipProvider = ({ children, delayDuration = 150 }) => {
  * In production: import { WorkflowContainer } from "@/shared/WorkflowContainer"
  * UPDATE (v3.2.0): Enhanced layout with better content area styling and header alignment
  * UPDATE (v3.6.1): Changed dark mode background to black (dark:bg-black)
+ * UPDATE (v3.6.6): Fixed header alignment with consistent vertical centering
  * @param {Object} props - Component props
  * @param {React.ReactNode} props.sidebarContent - Sidebar content
  * @param {React.ReactNode} props.sidebarHeader - Sidebar header content
@@ -221,8 +208,8 @@ const WorkflowContainer = ({
       <div className={`flex h-screen bg-background text-foreground dark:bg-black ${className}`}>
         {/* Sidebar - UPDATED (v3.2.0): Removed individual rounded corners */}
         <div className={`${isCollapsed ? 'w-16' : 'w-72'} border-r border-border dark:border-gray-700 bg-card dark:bg-black transition-all duration-300 flex flex-col overflow-hidden`}>
-          {/* Sidebar Header - UPDATED (v3.2.0): Fixed height for alignment */}
-          <div className="h-16 border-b border-border dark:border-gray-700">
+          {/* Sidebar Header - UPDATED (v3.6.6): Fixed height and alignment for consistency */}
+          <div className="h-16 border-b border-border dark:border-gray-700 flex items-center">
             {sidebarHeader}
           </div>
           {/* Sidebar Content */}
@@ -233,7 +220,7 @@ const WorkflowContainer = ({
 
         {/* Main Content Area - UPDATED (v3.2.0): Removed rounded corners from container */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header - UPDATED (v3.2.0): Fixed height matching sidebar header */}
+          {/* Header - UPDATED (v3.6.6): Fixed height matching sidebar header with consistent alignment */}
           {headerContent && (
             <header className="h-16 border-b border-border dark:border-gray-700 bg-background dark:bg-black px-6 flex items-center">
               {React.cloneElement(headerContent, { isCollapsed, onHeaderToggle })}
@@ -621,6 +608,7 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
  * UPDATE (v3.6.3): Removed "Device Configuration Restore Tool" title; fixed duplicate tab panels in restore
  * UPDATE (v3.6.4): Removed <TabsList> from restore tab, keeping step indicator and programmatic navigation
  * UPDATE (v3.6.5): Updated backup API integration to use new endpoints and data mapping
+ * UPDATE (v3.6.6): Fixed header alignment between sidebar and main content
  *
  * Architecture:
  * - Uses WorkflowContainer for consistent sidebar/main layout
@@ -1044,6 +1032,7 @@ function ModernBackup() {
   // =============================================================================
   /**
    * Renders header with toggle button and title
+   * UPDATE (v3.6.6): Fixed vertical alignment to match sidebar header
    * @param {Object} props - Component props
    * @param {boolean} props.isCollapsed - Sidebar collapsed state
    * @param {Function} props.onHeaderToggle - Toggle handler
@@ -1057,26 +1046,50 @@ function ModernBackup() {
           className="w-6 h-6 bg-card dark:bg-black border border-border dark:border-gray-700 rounded-full flex items-center justify-center hover:bg-accent dark:hover:bg-gray-700 transition-colors z-10"
           aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-            {isCollapsed ? (
+          {isCollapsed ? (
             <ChevronRight className="h-3 w-3" />
           ) : (
             <ChevronLeft className="h-3 w-3" />
           )}
         </button>
-        <div className="flex flex-col">
-          <h1 className="text-lg font-semibold text-foreground dark:text-gray-100 pt-0.5">
+        <div className="flex flex-col justify-center"> {/* Added justify-center for vertical alignment */}
+          <h1 className="text-lg font-semibold text-foreground dark:text-gray-100 leading-tight"> {/* Removed pt-0.5, added leading-tight */}
             {activeTab === 'backup' ? 'Backup Device' : 'Restore Device'}
           </h1>
-          <p className="text-xs text-muted-foreground dark:text-gray-400">
-            {activeTab === 'backup' ? 'Create a backup of your device configuration' : 'Restore device configurations from backups'}
-          </p>
         </div>
       </div>
     </div>
   );
 
   // =============================================================================
-  // SECTION 4.3: MAIN CONTENT RENDER
+  // SECTION 4.3: SIDEBAR HEADER COMPONENT
+  // =============================================================================
+  /**
+   * Renders sidebar header with consistent vertical alignment
+   * UPDATE (v3.6.6): Ensured proper vertical centering to match main header
+   * @param {Object} props - Component props
+   * @param {boolean} props.isCollapsed - Sidebar collapsed state
+   */
+  const SidebarHeader = ({ isCollapsed }) => (
+    <div className={`flex items-center h-full px-4 transition-all duration-300 ${
+      isCollapsed ? 'justify-center' : ''
+    }`}>
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-primary/10 dark:bg-gray-700/30 rounded-lg flex-shrink-0">
+          <Database className="h-5 w-5 text-primary dark:text-gray-100" />
+        </div>
+        {!isCollapsed && (
+          <div className="overflow-hidden">
+            <h2 className="font-semibold text-foreground dark:text-gray-100 truncate leading-tight">Operations</h2> {/* Added leading-tight */}
+            <p className="text-xs text-muted-foreground dark:text-gray-400 truncate leading-tight mt-0.5">Backups</p> {/* Added leading-tight and mt-0.5 */}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // =============================================================================
+  // SECTION 4.4: MAIN CONTENT RENDER
   // =============================================================================
   /**
    * Renders main content based on activeTab
@@ -1087,8 +1100,6 @@ function ModernBackup() {
       return (
         <div className="w-full max-w-4xl mx-auto">
           <div className="mb-6 px-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Device Configuration Backup Tool</h2>
-            <p className="text-muted-foreground dark:text-gray-400">Create backups of device configurations</p>
           </div>
           <div className="mb-6 px-6">
             <div className="flex items-center space-x-4">
@@ -1154,6 +1165,8 @@ function ModernBackup() {
       return (
         <div className="w-full max-w-4xl mx-auto">
           <div className="mb-6 px-6">
+          </div>
+          <div className="mb-6 px-6">
             <div className="flex items-center space-x-4">
               {[1, 2, 3].map((step) => (
                 <div key={step} className="flex items-center">
@@ -1186,6 +1199,8 @@ function ModernBackup() {
               ))}
             </div>
           </div>
+
+
           <Tabs value={currentTab} className="w-full">
             <TabsContent value="restore" className="mt-6">
               <RestoreForm
@@ -1312,7 +1327,7 @@ function ModernBackup() {
   };
 
   // =============================================================================
-  // SECTION 4.4: MAIN RENDER SECTION
+  // SECTION 4.5: MAIN RENDER SECTION
   // =============================================================================
   return (
     <div className="min-h-screen bg-background text-foreground dark:bg-black">
@@ -1325,21 +1340,7 @@ function ModernBackup() {
           />
         }
         sidebarHeader={
-          <div className={`flex items-center h-full px-4 transition-all duration-300 ${
-            sidebarCollapsed ? 'justify-center' : ''
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 dark:bg-gray-700/30 rounded-lg flex-shrink-0">
-                <Database className="h-5 w-5 text-primary dark:text-gray-100" />
-              </div>
-              {!sidebarCollapsed && (
-                <div className="overflow-hidden">
-                  <h2 className="font-semibold text-foreground dark:text-gray-100 truncate">Backup Operations</h2>
-                  <p className="text-xs text-muted-foreground dark:text-gray-400 truncate">Manage device backups</p>
-                </div>
-              )}
-            </div>
-          </div>
+          <SidebarHeader isCollapsed={sidebarCollapsed} />
         }
         headerContent={<HeaderContent />}
         mainContent={renderMainContent()}
