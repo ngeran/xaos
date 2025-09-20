@@ -40,7 +40,7 @@ const MegaMenu = ({ activeMenu, onMenuEnter, onMenuLeave, onError }) => {
         setLoading(true);
         setError(null);
         
-        const response = await fetch('http://localhost:3001/api/navigation');
+        const response = await fetch('http://localhost:3010/api/navigation');
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);

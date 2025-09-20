@@ -1,21 +1,13 @@
-# File Path: docker-compose.yml
-# Version: 1.1.0
+# File Path: xaos/packages/frontend/docker-compose.yml
+# Version: 1.2.0
 #
 # Description:
 # Updated Docker Compose configuration for Rust backend.
-# Minimal changes to support the Rust backend while maintaining Python runner.
-#
-# Key Features:
-# - Rust backend container
-# - Python runner container (unchanged)
-# - Shared volumes and networks
-# - Health checks
+# Build context now includes backend and shared folders for successful COPY.
 #
 # Usage Guide:
-# docker-compose up -d --build
-# docker-compose logs -f rust_backend
-
-version: "3.8"
+# docker compose up -d --build
+# docker compose logs -f rust_backend
 
 services:
   # =============================================================================
@@ -24,17 +16,17 @@ services:
   rust_backend:
     container_name: rust_backend
     build:
-      context: ./packages/backend
-      dockerfile: Dockerfile
+      context: ../.. # <-- context now includes backend/ and shared/
+      dockerfile: packages/backend/Dockerfile
     ports:
-      - "3002:3002"
+      - "3010:3001"
     volumes:
       # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Map the new shared data directory
-      - ./packages/shared:/app/shared:ro
+      # Map the shared data directory
+      - ./../../packages/shared:/app/shared:ro
       # Map the python scripts needed for execution
-      - ./packages/frontend/xaospy:/app/xaospy:ro
+      - ./xaospy:/app/xaospy:ro
     environment:
       RUST_LOG: "debug,rust_backend=debug"
       HOST_PROJECT_ROOT: "${PROJECT_ROOT}"
@@ -51,16 +43,19 @@ services:
     container_name: python_runner
     image: python-runner
     build:
-      context: ./packages/frontend/xaospy
+      context: ./xaospy
       dockerfile: Dockerfile
-    command: tail -f /dev/null
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
     volumes:
       # Map the python project directory
-      - ./packages/frontend/xaospy:/xaospy
+      - ./xaospy:/xaospy
       # Map the shared data directory
-      - ./packages/shared:/shared
+      - ./../../packages/shared:/shared
+    ports:
+      - "8001:8000"
     networks:
       - vlabs-net
+    restart: unless-stopped
 
 networks:
   vlabs-net:

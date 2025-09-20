@@ -24,7 +24,7 @@ import { logger } from '../utils/logger.js';
 class RustApiClient {
     constructor(options = {}) {
     // Use the environment variable if available, otherwise fall back to options or default
-    this.baseUrl = options.baseUrl || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+    this.baseUrl = options.baseUrl || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3010';
     this.timeout = options.timeout || 30000;
     this.retries = options.retries || 3;
     this.retryDelay = options.retryDelay || 1000;

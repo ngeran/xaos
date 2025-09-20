@@ -97,7 +97,7 @@ import toast from 'react-hot-toast';
 // =============================================================================
 // SECTION 1: CONFIGURATION & CONSTANTS
 // =============================================================================
-const API_BASE_URL = "http://localhost:3001";
+const API_BASE_URL = "http://localhost:3010";
 
 // Animation duration constants for consistent timing
 const ANIMATION_DURATION = {
@@ -701,20 +701,59 @@ function ModernBackup() {
    * Initiates the backup process
    * Transitions to Execute step and simulates backup progress
    */
-  const handleBackup = () => {
-    setProgress(0);
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setBackupStatus('success');
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 300);
-  };
+  // ==============================================================
+  //
+  // ==============================================================
+  const handleBackup = async (event) => {
+    event.preventDefault();
 
+    // Basic validation
+    if (!parameters.hostname && !parameters.inventory_file) {
+        toast.error('Please specify a hostname or an inventory file.');
+        return;
+    }
+
+    // Set UI state to show loading
+    setBackupStatus(null);
+    setProgress(0);
+    toast.loading('Starting backup...', { id: 'backup-toast' });
+
+    const payload = {
+        hostname: parameters.hostname || undefined,
+        inventory_file: parameters.inventory_file || undefined,
+        username: parameters.username,
+        password: parameters.password
+    };
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/backups/devices`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || `HTTP error! Status: ${response.status}`);
+        }
+
+        // Success handling
+        console.log("Backup API response:", data);
+        setBackupStatus('success');
+        setProgress(100);
+        toast.success('Backup completed successfully!', { id: 'backup-toast' });
+
+    } catch (error) {
+        // Error handling
+        console.error("Backup failed:", error);
+        setBackupStatus('error');
+        setProgress(0);
+        toast.error(`Backup failed: ${error.message}`, { id: 'backup-toast' });
+    }
+};
   /**
    * Initiates the restore process
    * Transitions to Execute tab and simulates restore progress

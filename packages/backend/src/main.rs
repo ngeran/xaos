@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize all application services with proper error handling
 
     info!("Initializing YAML service...");
-    let yaml_service = Arc::new(YamlService::new("../shared/schemas", "../shared/data").await?);
+    let yaml_service = Arc::new(YamlService::new("./shared/schemas", "./shared/data").await?);
 
     info!("Initializing WebSocket service...");
     let websocket_service = Arc::new(WebSocketService::new(None));
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // =========================================================================
     // Configure and start the HTTP server
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3001));
     info!("Server listening on {}", addr);
     info!("WebSocket endpoint available at ws://{}/ws", addr);
     info!("Python API endpoints available at http://{}/api/python/*", addr);

@@ -1,6 +1,6 @@
 // =========================================================================================
 // File Path: src/models/mod.rs
-// Version: 1.1.0
+// Version: 1.2.0
 //
 // Description:
 // Central module for API data models and error handling. Contains all shared data structures
@@ -12,6 +12,7 @@
 // - WebSocket Models: Real-time communication structures
 //
 // Change Log:
+// - 1.2.0: Added BadRequest variant to ApiError and implemented From<axum::Error> for ApiError.
 // - 1.1.0: Added ExecutionError variant and organized code into logical sections
 // - 1.0.0: Initial implementation
 // =========================================================================================
@@ -46,6 +47,9 @@ pub enum ApiError {
     #[error("Not found: {0}")]
     NotFound(String),
     
+    #[error("Bad request: {0}")]
+    BadRequest(String),
+    
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     
@@ -74,6 +78,7 @@ impl IntoResponse for ApiError {
             ApiError::YamlParseError(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             ApiError::FileNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             ApiError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             ApiError::IoError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string()),
             ApiError::SerializationError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Serialization failed".to_string()),
             ApiError::DeserializationError(_) => (StatusCode::BAD_REQUEST, "Invalid request format".to_string()),
@@ -89,6 +94,13 @@ impl IntoResponse for ApiError {
         });
 
         (status, axum::Json(body)).into_response()
+    }
+}
+
+// Implement the From trait for `axum::Error` to `ApiError`
+impl From<axum::Error> for ApiError {
+    fn from(inner: axum::Error) -> Self {
+        ApiError::ExecutionError(inner.to_string())
     }
 }
 

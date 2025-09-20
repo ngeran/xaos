@@ -56,7 +56,7 @@ export class WebSocketService extends EventEmitter {
     
     // Default configuration for the service
     const defaultOptions = {
-      url: import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:3001/ws',
+      url: import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:3010/ws',
       reconnect: true,
       reconnectAttempts: Infinity,
       reconnectInterval: 1000,

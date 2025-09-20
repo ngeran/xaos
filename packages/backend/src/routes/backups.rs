@@ -1,25 +1,21 @@
-// File: src/routes/backups.rs
-// =========================================================================================
+// =============================================================================
 // File Path: src/routes/backups.rs
-// Version: 1.1.0
+// Version: 1.3.0
 //
 // Description:
-// Defines routes for configuration backups API.
+// API router for all backup-related endpoints.
 //
 // Key Features:
-// - Endpoint to list all device backup folders
-// - Endpoint to list backup files for a specific device
-// - Endpoint to fetch specific backup file content
-// - Endpoint to trigger backup execution
+// - Aggregates routes for listing devices, listing files, getting content, and running backups.
 //
-// Usage Guide:
-// - GET /api/backups/devices → lists all device folders
-// - GET /api/backups/device/:device_name → lists backup files for a device
-// - GET /api/backups/file/:device_name/:filename → returns specific backup file content
-// - POST /api/backups/run → triggers backup execution
-// =========================================================================================
+// Change Log:
+// - 1.3.0: Removed unused imports to fix compiler warnings.
+// - 1.2.0: Unified GET and POST routes for /api/backups/devices to a single handler.
+// - 1.1.0: Added explicit GET and POST routes for backup and restore.
+// - 1.0.0: Initial implementation of the backups router.
+// =============================================================================
 
-use axum::{routing::{get, post}, Router};
+use axum::{routing::get, Router};
 use crate::{api::backups, AppState};
 
 // =============================================================================
@@ -29,15 +25,8 @@ use crate::{api::backups, AppState};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        // List all device backup folders
-        .route("/api/backups/devices", get(backups::list_backup_devices))
-        
-        // List backup files for a specific device
+        // Unified handler for both GET (list) and POST (run) for /api/backups/devices
+        .route("/api/backups/devices", get(backups::backups_handler).post(backups::backups_handler))
         .route("/api/backups/device/:device_name", get(backups::list_device_backups))
-        
-        // Get specific backup file content
         .route("/api/backups/file/:device_name/:filename", get(backups::get_backup_file))
-        
-        // Trigger backup execution
-        .route("/api/backups/run", post(backups::run_backup))
 }
