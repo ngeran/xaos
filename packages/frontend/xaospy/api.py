@@ -50,6 +50,27 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/api/backups/devices")
+async def list_backup_devices():
+    """
+    Lists available backup devices and their backup files.
+    """
+    base_path = Path("/shared/data/backups")
+    if not base_path.exists():
+        return {"error": "Backups directory not found", "path": str(base_path)}
+
+    devices = {}
+    try:
+        for device_dir in base_path.iterdir():
+            if device_dir.is_dir():
+                files = [f.name for f in device_dir.iterdir() if f.is_file()]
+                devices[device_dir.name] = files
+
+        return {"status": "success", "devices": devices, "path": str(base_path)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing backups: {str(e)}")
+
+
 @app.post("/api/backups/devices")
 async def backup_devices(request: BackupRequest):
     """

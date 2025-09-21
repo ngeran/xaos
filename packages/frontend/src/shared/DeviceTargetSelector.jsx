@@ -107,7 +107,7 @@ export default function DeviceTargetSelector({
       
       // If we previously had to use fallback, continue using it
       if (usingFallbackRef.current) {
-        apiUrl = 'http://localhost:3001/api/inventory/list';
+        apiUrl = 'http://localhost:3010/api/inventory/list';
       }
       
       const response = await axios.get(apiUrl, {

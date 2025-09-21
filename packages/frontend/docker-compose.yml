@@ -29,6 +29,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Map the shared data directory
       - ./../../packages/shared:/app/shared:ro
+      # Map the inventories direcrory
+      - ./../../packages/shared/data/inventories:/shared/data/inventories:ro
     environment:
       RUST_LOG: "debug,rust_backend=debug"
       HOST_PROJECT_ROOT: "${PROJECT_ROOT}"
