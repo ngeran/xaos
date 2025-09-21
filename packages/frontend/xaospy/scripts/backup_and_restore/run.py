@@ -43,8 +43,9 @@ from pathlib import Path
 from datetime import datetime
 
 # Local worker classes that contain the device-specific logic.
-from .BackupConfig import BackupManager
-from .RestoreConfig import RestoreManager
+sys.path.append(str(Path(__file__).parent))
+from BackupConfig import BackupManager
+from RestoreConfig import RestoreManager
 
 
 # =================================================================================================

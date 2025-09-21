@@ -1,16 +1,31 @@
-# backend/Cargo.toml
+# =========================================================================================
+# FILE: packages/backend/Cargo.toml
+# VERSION: 1.1.0
+#
+# DESCRIPTION:
+# Dependency configuration for Rust backend with HTTP client support for Python API communication.
+#
+# HOW TO GUIDE:
+# 1. Run `cargo build` after adding reqwest dependency
+# 2. Ensure all services are running: Rust backend, Python API, and shared volumes
+# =========================================================================================
+
 [package]
 name = "rust-backend"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow ="1.0"
+anyhow = "1.0"
+
 # Web framework
 axum = { version = "0.7", features = ["ws", "macros"] }
 tokio = { version = "1.0", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
+
+# HTTP client for Python API communication
+reqwest = { version = "0.11", features = ["json"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

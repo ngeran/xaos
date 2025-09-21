@@ -1,14 +1,11 @@
-# Use a standard, slim Python image
-FROM python:3.9-slim
-
-# Set the working directory inside the container
-WORKDIR /app
-
-# Copy only the requirements file first to leverage Docker's layer caching
-COPY requirements.txt .
-
-# Install the Python dependencies
+# File: packages/frontend/xaospy/Dockerfile
+FROM python:3.9
+WORKDIR /xaospy
+# Install build dependencies for PyYAML
+RUN apt-get update && apt-get install -y gcc python3-dev libyaml-dev && rm -rf /var/lib/apt/lists/*
+COPY . /xaospy
+# Explicitly install PyYAML
+RUN pip install --no-cache-dir PyYAML
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code into the container
-COPY . .
+RUN chmod -R +x /xaospy/scripts
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]

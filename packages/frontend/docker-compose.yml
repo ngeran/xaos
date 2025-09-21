@@ -1,9 +1,13 @@
 # File Path: xaos/packages/frontend/docker-compose.yml
-# Version: 1.2.0
+# Version: 1.2.1
 #
 # Description:
-# Updated Docker Compose configuration for Rust backend.
+# Updated Docker Compose configuration for Rust backend and Python runner.
 # Build context now includes backend and shared folders for successful COPY.
+# Removed ./xaospy:/xaospy volume mount for python_runner to prevent overriding
+# copied files from Dockerfile, ensuring scripts/backup_and_restore is included.
+# Explicitly set vlabs-net as an external network to use the existing network
+# created with `docker network create vlabs-net`. Added health check for python_runner.
 #
 # Usage Guide:
 # docker compose up -d --build
@@ -25,13 +29,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Map the shared data directory
       - ./../../packages/shared:/app/shared:ro
-      # Map the python scripts needed for execution
-      - ./xaospy:/app/xaospy:ro
     environment:
       RUST_LOG: "debug,rust_backend=debug"
       HOST_PROJECT_ROOT: "${PROJECT_ROOT}"
     depends_on:
-      - python_runner
+      python_runner:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - vlabs-net
@@ -47,16 +50,21 @@ services:
       dockerfile: Dockerfile
     command: uvicorn api:app --host 0.0.0.0 --port 8000
     volumes:
-      # Map the python project directory
-      - ./xaospy:/xaospy
       # Map the shared data directory
       - ./../../packages/shared:/shared
     ports:
       - "8001:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - vlabs-net
     restart: unless-stopped
 
 networks:
   vlabs-net:
-    driver: bridge
+    external: true
+    name: vlabs-net

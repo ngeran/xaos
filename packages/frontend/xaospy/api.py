@@ -3,20 +3,24 @@
 # OVERVIEW:
 # A FastAPI application that exposes API endpoints for backup and restore operations.
 # It acts as a bridge between the Rust backend and the Python worker scripts.
+# Updated to include a /health endpoint for Docker health checks.
 # =================================================================================================
 import json
 import asyncio
-from fastapi import FastAPI, Request
+import os
+import subprocess
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from pathlib import Path
 from typing import Optional
+import logging
 
-# --- MODIFICATION START ---
 # Import the main function using the full module path from the project root.
 from scripts.backup_and_restore.run import main as run_orchestrator
-# --- MODIFICATION END ---
 
 app = FastAPI()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # Pydantic models to define the expected request body for each operation.
@@ -37,44 +41,74 @@ class RestoreRequest(BaseModel):
     commit_timeout: int = 300
 
 
-@app.post("/backup")
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint for Docker Compose.
+    Returns a simple status to confirm the API is running.
+    """
+    return {"status": "healthy"}
+
+
+@app.post("/api/backups/devices")
 async def backup_devices(request: BackupRequest):
     """
     Triggers a backup operation.
     """
-    # Create the argument list for the run.py script based on the API request.
-    args = [
-        "--command",
-        "backup",
-        "--username",
-        request.username,
-        "--password",
-        request.password,
-    ]
-    if request.hostname:
-        args.extend(["--hostname", request.hostname])
-    if request.inventory_file:
-        args.extend(["--inventory_file", request.inventory_file])
+    logger.info(f"Received backup request for {request.hostname}")
+    output = ""  # Initialize output to avoid unbound variable
+    try:
+        args = [
+            "--command",
+            "backup",
+            "--username",
+            request.username,
+            "--password",
+            request.password,
+            "--backup_path",
+            "/shared/data/backups",
+        ]
+        if request.hostname:
+            args.extend(["--hostname", request.hostname])
+        if request.inventory_file:
+            args.extend(["--inventory_file", request.inventory_file])
 
-    # Use asyncio.create_subprocess_exec to run the orchestrator and stream output.
-    process = await asyncio.create_subprocess_exec(
-        "python3",
-        "run.py",
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
+        logger.info(
+            f"Executing command: /usr/local/bin/python3 /xaospy/scripts/backup_and_restore/run.py {' '.join(args)}"
+        )
 
-    # Stream the output back to the client as Server-Sent Events (SSE) or similar.
-    # For a simple, single-response API, you can just wait for the process to finish.
-    stdout, _ = await process.communicate()
-    output = stdout.decode().strip()
+        process = await asyncio.create_subprocess_exec(
+            "/usr/local/bin/python3",  # Explicit Python path
+            "/xaospy/scripts/backup_and_restore/run.py",
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env={
+                "PYTHONPATH": "/xaospy:/usr/local/lib/python3.9/site-packages"  # Include site-packages for PyYAML
+            },
+        )
 
-    # The last line of the output will be the final JSON result from run.py
-    final_result_line = output.splitlines()[-1]
-    final_result = json.loads(final_result_line)
+        stdout, _ = await process.communicate()
+        output = stdout.decode().strip()
 
-    return final_result
+        logger.info(f"Script output: {output}")
+
+        final_result_line = output.splitlines()[-1]
+        final_result = json.loads(final_result_line)
+        logger.info(f"Backup completed: {final_result}")
+        return final_result
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Subprocess error: {e.stderr}")
+        raise HTTPException(status_code=500, detail=f"Execution error: {e.stderr}")
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error: {e}")
+        logger.error(f"Raw output: {output}")
+        raise HTTPException(
+            status_code=500, detail=f"Invalid JSON response from script: {e}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
 @app.post("/restore")
@@ -82,41 +116,58 @@ async def restore_device(request: RestoreRequest):
     """
     Triggers a restore operation.
     """
-    args = [
-        "--command",
-        "restore",
-        "--hostname",
-        request.hostname,
-        "--backup_file",
-        request.backup_file,
-        "--username",
-        request.username,
-        "--password",
-        request.password,
-        "--type",
-        request.restore_type,
-        "--confirmed_commit_timeout",
-        str(request.confirmed_commit_timeout),
-        "--commit_timeout",
-        str(request.commit_timeout),
-    ]
+    output = ""  # Initialize output to avoid unbound variable
+    try:
+        args = [
+            "--command",
+            "restore",
+            "--hostname",
+            request.hostname,
+            "--backup_file",
+            request.backup_file,
+            "--username",
+            request.username,
+            "--password",
+            request.password,
+            "--type",
+            request.restore_type,
+            "--confirmed_commit_timeout",
+            str(request.confirmed_commit_timeout),
+            "--commit_timeout",
+            str(request.commit_timeout),
+        ]
 
-    process = await asyncio.create_subprocess_exec(
-        "python3",
-        "run.py",
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    stdout, _ = await process.communicate()
-    output = stdout.decode().strip()
+        logger.info(
+            f"Executing restore command: /usr/local/bin/python3 /xaospy/scripts/backup_and_restore/run.py {' '.join(args)}"
+        )
 
-    final_result_line = output.splitlines()[-1]
-    final_result = json.loads(final_result_line)
+        process = await asyncio.create_subprocess_exec(
+            "/usr/local/bin/python3",  # Explicit Python path
+            "/xaospy/scripts/backup_and_restore/run.py",
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env={
+                "PYTHONPATH": "/xaospy:/usr/local/lib/python3.9/site-packages"  # Include site-packages for PyYAML
+            },
+        )
+        stdout, _ = await process.communicate()
+        output = stdout.decode().strip()
 
-    return final_result
+        logger.info(f"Restore script output: {output}")
 
-
-# To handle file uploads for the Restore command's 'inventory_file'
-# (assuming a future need), you could use a dedicated endpoint and process
-# the file before calling your orchestrator.
+        final_result_line = output.splitlines()[-1]
+        final_result = json.loads(final_result_line)
+        return final_result
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Subprocess error: {e.stderr}")
+        raise HTTPException(status_code=500, detail=f"Execution error: {e.stderr}")
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error: {e}")
+        logger.error(f"Raw output: {output}")
+        raise HTTPException(
+            status_code=500, detail=f"Invalid JSON response from script: {e}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
