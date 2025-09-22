@@ -1,5 +1,5 @@
 // File Path: src/api/inventory.rs
-// Version: 1.3.0
+// Version: 1.3.1
 //
 // Description:
 // API handlers for accessing the network inventory (routers, switches, firewalls).
@@ -15,6 +15,7 @@
 // GET /api/inventory/list → lists all inventory YAML files
 //
 // Change Log:
+// - 1.3.1: Fixed absolute path for Docker container
 // - 1.3.0: Fixed path consistency issues
 // - 1.2.0: Fixed path handling for shared/data structure
 // - 1.1.0: Added list_inventory_files endpoint
@@ -51,15 +52,15 @@ pub async fn get_inventory(State(state): State<AppState>) -> ApiResult<Json<Valu
 
 /// Handler to list all YAML files in the shared/data/inventories directory
 pub async fn list_inventory_files() -> ApiResult<Json<Value>> {
-    // Define the inventories directory path - FIXED FOR shared/data STRUCTURE
-    let inventories_path = Path::new("../shared/data/inventories");
+    // Define the inventories directory path - FIXED: Use absolute Docker path
+    let inventories_path = Path::new("/shared/data/inventories");
 
     // Check if directory exists
     if !inventories_path.exists() {
         return Ok(Json(json!({
             "files": [],
             "message": "Inventories directory not found",
-            "path": "../shared/data/inventories",
+            "path": "/shared/data/inventories",
             "absolute_path": inventories_path.canonicalize().ok().and_then(|p| p.to_str().map(|s| s.to_string()))
         })));
     }
@@ -119,7 +120,7 @@ pub async fn list_inventory_files() -> ApiResult<Json<Value>> {
     Ok(Json(json!({
         "files": yaml_files,
         "count": yaml_files.len(),
-        "path": "../shared/data/inventories"
+        "path": "/shared/data/inventories"
     })))
 }
 

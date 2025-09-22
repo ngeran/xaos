@@ -154,12 +154,12 @@ async def read_process_output(process, job_id: str, device: str, job_type: str):
     """
     output = ""
     while True:
-        # Read line from stdout
-        line = await process.stdout.readline()
+        # Use asyncio.to_thread to run the blocking readline() call in a separate thread
+        line = await asyncio.to_thread(process.stdout.readline)
         if not line:
             break
 
-        output_line = line.decode().strip()
+        output_line = line.strip()
         output += output_line + "\n"
 
         logger.debug(f"Process output: {output_line}")
@@ -251,6 +251,7 @@ async def backup_devices(request: BackupRequest):
     )
 
     output = ""  # Initialize output to avoid unbound variable
+    process = None
     try:
         args = [
             "--command",
@@ -271,25 +272,20 @@ async def backup_devices(request: BackupRequest):
             f"Executing command: /usr/local/bin/python3 /xaospy/scripts/backup_and_restore/run.py {' '.join(args)}"
         )
 
-        # Create subprocess with pipes
-        process = await asyncio.create_subprocess_exec(
-            "/usr/local/bin/python3",  # Explicit Python path
-            "/xaospy/scripts/backup_and_restore/run.py",
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,  # Redirect stderr to stdout
-            env={
-                "PYTHONPATH": "/xaospy:/usr/local/lib/python3.9/site-packages",
-                "JOB_ID": job_id,  # Pass job ID to script for progress tracking
-                "DEVICE": device,
-            },
+        # Create a blocking subprocess with pipes
+        process = subprocess.Popen(
+            ["/usr/local/bin/python3", "/xaospy/scripts/backup_and_restore/run.py"]
+            + args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
 
-        # Read output in real-time
+        # Read output in real-time using the async-friendly wrapper
         output = await read_process_output(process, job_id, device, "backup")
 
-        # Wait for process to complete
-        return_code = await process.wait()
+        # Wait for the process to complete and get the final return code
+        return_code = await asyncio.to_thread(process.wait)
 
         if return_code == 0:
             try:
@@ -340,22 +336,6 @@ async def backup_devices(request: BackupRequest):
 
             raise HTTPException(status_code=500, detail=error_msg)
 
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Subprocess error: {e.stderr if e.stderr else str(e)}"
-        logger.error(error_msg)
-
-        # Send job failed event
-        await send_job_progress(
-            job_id=job_id,
-            device=device,
-            job_type="backup",
-            event_type="failed",
-            status="failed",
-            data={"error": error_msg, "output": output},
-            error=error_msg,
-        )
-
-        raise HTTPException(status_code=500, detail=f"Execution error: {error_msg}")
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(error_msg)
@@ -372,6 +352,10 @@ async def backup_devices(request: BackupRequest):
         )
 
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+    finally:
+        if process and process.poll() is None:
+            process.terminate()
+            await asyncio.to_thread(process.wait)
 
 
 @app.post("/restore")
@@ -399,6 +383,7 @@ async def restore_device(request: RestoreRequest):
     )
 
     output = ""  # Initialize output to avoid unbound variable
+    process = None
     try:
         args = [
             "--command",
@@ -423,25 +408,19 @@ async def restore_device(request: RestoreRequest):
             f"Executing restore command: /usr/local/bin/python3 /xaospy/scripts/backup_and_restore/run.py {' '.join(args)}"
         )
 
-        # Create subprocess with pipes
-        process = await asyncio.create_subprocess_exec(
-            "/usr/local/bin/python3",  # Explicit Python path
-            "/xaospy/scripts/backup_and_restore/run.py",
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,  # Redirect stderr to stdout
-            env={
-                "PYTHONPATH": "/xaospy:/usr/local/lib/python3.9/site-packages",
-                "JOB_ID": job_id,  # Pass job ID to script for progress tracking
-                "DEVICE": request.hostname,
-            },
+        process = subprocess.Popen(
+            ["/usr/local/bin/python3", "/xaospy/scripts/backup_and_restore/run.py"]
+            + args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
 
         # Read output in real-time
         output = await read_process_output(process, job_id, request.hostname, "restore")
 
         # Wait for process to complete
-        return_code = await process.wait()
+        return_code = await asyncio.to_thread(process.wait)
 
         if return_code == 0:
             try:
@@ -491,41 +470,6 @@ async def restore_device(request: RestoreRequest):
 
             raise HTTPException(status_code=500, detail=error_msg)
 
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Subprocess error: {e.stderr if e.stderr else str(e)}"
-        logger.error(error_msg)
-
-        # Send job failed event
-        await send_job_progress(
-            job_id=job_id,
-            device=request.hostname,
-            job_type="restore",
-            event_type="failed",
-            status="failed",
-            data={"error": error_msg, "output": output},
-            error=error_msg,
-        )
-
-        raise HTTPException(status_code=500, detail=f"Execution error: {error_msg}")
-    except json.JSONDecodeError as e:
-        error_msg = f"JSON decode error: {e}"
-        logger.error(error_msg)
-        logger.error(f"Raw output: {output}")
-
-        # Send job failed event
-        await send_job_progress(
-            job_id=job_id,
-            device=request.hostname,
-            job_type="restore",
-            event_type="failed",
-            status="failed",
-            data={"raw_output": output},
-            error=error_msg,
-        )
-
-        raise HTTPException(
-            status_code=500, detail=f"Invalid JSON response from script: {e}"
-        )
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(error_msg)
@@ -542,6 +486,10 @@ async def restore_device(request: RestoreRequest):
         )
 
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+    finally:
+        if process and process.poll() is None:
+            process.terminate()
+            await asyncio.to_thread(process.wait)
 
 
 @app.get("/ws/connections")

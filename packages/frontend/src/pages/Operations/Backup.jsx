@@ -1,6 +1,7 @@
+
 /**
  * File Path: src/pages/Operations/Backup.jsx
- * Version: 3.6.6
+ * Version: 3.6.7
  *
  * Description:
  * Modern redesigned backup operations page with enhanced UI/UX and tab-based interface.
@@ -12,60 +13,8 @@
  * UPDATE (v3.6.4): Removed <TabsList> component (tab navigation bar) from restore tab, retaining step indicator and <TabsContent> for Restore, Execute, Results. Navigation now relies on buttons and programmatic state changes.
  * UPDATE (v3.6.5): Updated backup API integration to use new endpoints: /api/backups/devices and /api/backups/device/:device_name. Fixed data mapping to match actual API response format.
  * UPDATE (v3.6.6): Fixed header alignment between sidebar and main content headers for better visual consistency.
- *
- * Key Features:
- * - Modern glassmorphism design with gradient overlays and backdrop blur
- * - Tab-based interface for backup and restore: Restore, Execute, Results (without tab navigation bar for restore)
- * - Enhanced form validation with real-time feedback
- * - Responsive design with mobile-first approach
- * - Full light/dark mode compatibility using Tailwind dark variants and shadcn variables
- * - Accessibility improvements with ARIA labels and semantic markup
- * - Smooth animations and hover effects for premium user experience
- * - API-driven sidebar navigation items
- * - Rounded content area with card-like appearance
- * - Aligned sidebar and main content headers
- * - Fixed form submission behavior preventing page refresh
- * - Isolated keyboard event handling
- * - Consistent device selection and authentication with Restore.jsx
- * - Step indicator for restore workflow navigation
- *
- * Architecture:
- * - Uses WorkflowContainer for consistent sidebar/main layout
- * - Modular component design for easy maintenance
- * - State management with React hooks
- * - Form validation with visual feedback
- * - CSS-in-JS styling with Tailwind utility classes
- * - API integration for dynamic sidebar content and restore form data
- * - Card-based content layout for improved visual hierarchy
- * - Proper event isolation to prevent conflicts
- * - Integration of DeviceTargetSelector, DeviceAuthFields, and RestoreForm
- * - Step-based navigation for restore with step indicator
- *
- * Dependencies:
- * - @/shared/DeviceTargetSelector: Device selection component
- * - @/shared/DeviceAuthFields: Authentication form component
- * - @/components/ui/tabs: Tab navigation component
- * - @/components/ui/button: Button UI component
- * - lucide-react: Icon library for UI elements
- * - react-spinners/PulseLoader: Loading animations
- * - react-hot-toast: Toast notifications
- * 
- * State Management:
- * - activeTab: Controls sidebar navigation ('backup', 'restore', etc.)
- * - currentTab: Controls main content tabs for restore ('restore', 'execute', 'results')
- * - parameters: Stores form parameters (hostname, backup_file/inventory_file, username, password)
- * - sidebarItems: Navigation items fetched from API
- * - loading: Loading state for API calls (sidebar)
- * - error: Error state for API calls (sidebar)
- * - sidebarCollapsed: Tracks sidebar collapsed state
- * - progress: Tracks execution progress percentage
- * - backupStatus: Tracks backup outcome
- * - restoreStatus: Tracks restore outcome
- * - hosts: List of available host devices from API (for restore)
- * - backups: List of available backup files for selected host (for restore)
- * - loadingHosts: Loading state for hosts fetch (for restore)
- * - loadingBackups: Loading state for backups fetch (for restore)
- * - errorRestore: Error message for API fetches (for restore)
+ * UPDATE (v3.6.7): Refactored Backup workflow to use <Tabs> like Restore (select, execute, results). Added setCurrentBackupTab("execute") in handleBackup for proper transitions.
+ * FIX: Resolved JSX boolean attribute error and API response mapping issues.
  */
 import React, { useState, useEffect } from "react";
 import {
@@ -560,8 +509,8 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
           </div>
         </div>
 
-        {/* Custom scrollbar styles */}
-        <style jsx>{`
+        {/* Custom scrollbar styles - FIXED: Removed jsx attribute */}
+        <style>{`
           .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
           }
@@ -582,7 +531,7 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
           .dark .custom-scrollbar::-webkit-scrollbar-thumb {
             background: #4b5563;
           }
-          .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          .dark .custom-scrollbar-thumb:hover {
             background: 6b7280;
           }
         `}</style>
@@ -609,48 +558,14 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
  * UPDATE (v3.6.4): Removed <TabsList> from restore tab, keeping step indicator and programmatic navigation
  * UPDATE (v3.6.5): Updated backup API integration to use new endpoints and data mapping
  * UPDATE (v3.6.6): Fixed header alignment between sidebar and main content
- *
- * Architecture:
- * - Uses WorkflowContainer for consistent sidebar/main layout
- * - Manages global state for form parameters, tabs, and API data
- * - Provides tab-based interface for backup and restore operations
- * - Handles form validation, user interactions, and API integration
- * - Ensures light/dark mode compatibility with Tailwind and shadcn
- *
- * State Management:
- * - activeTab: Controls sidebar navigation ('backup', 'restore', etc.)
- * - currentTab: Controls main content tabs for restore ('restore', 'execute', 'results')
- * - parameters: Stores form parameters (hostname, backup_file/inventory_file, username, password)
- * - sidebarItems: Navigation items fetched from API
- * - loading: Loading state for sidebar API calls
- * - error: Error state for sidebar API calls
- * - sidebarCollapsed: Tracks sidebar collapsed state
- * - progress: Tracks execution progress percentage
- * - backupStatus: Tracks backup outcome
- * - restoreStatus: Tracks restore outcome
- * - hosts: List of available host devices from API (for restore)
- * - backups: List of available backup files for selected host (for restore)
- * - loadingHosts: Loading state for hosts fetch (for restore)
- * - loadingBackups: Loading state for backups fetch (for restore)
- * - errorRestore: Error message for API fetches (for restore)
- *
- * Features:
- * - Real-time form validation
- * - Responsive design with mobile support
- * - Light/dark mode compatibility
- * - Smooth animations and transitions
- * - API-driven sidebar and restore form content
- * - Rounded content area with card-like appearance
- * - Aligned headers for better visual consistency
- * - Form submission prevention
- * - Isolated keyboard event handling
- * - Consistent device selection and authentication
- * - Step-based navigation for restore with step indicator
+ * UPDATE (v3.6.7): Refactored Backup workflow to use <Tabs> like Restore (select, execute, results). Added setCurrentBackupTab(\"execute\") in handleBackup for proper transitions.
+ * FIX: Resolved JSX boolean attribute error and API response mapping issues
  */
 function ModernBackup() {
   // --- State Management ---
   const [activeTab, setActiveTab] = useState("backup");
   const [currentTab, setCurrentTab] = useState("restore");
+  const [currentBackupTab, setCurrentBackupTab] = useState("select"); // UPDATE (v3.6.7): Added for backup
   const [parameters, setParameters] = useState({
     hostname: '',
     inventory_file: '',
@@ -699,11 +614,9 @@ function ModernBackup() {
 
   /**
    * Initiates the backup process
-   * Transitions to Execute step and simulates backup progress
+   * Transitions to Execute step and performs API call
+   * UPDATE (v3.6.7): Added setCurrentBackupTab("execute") to show progress panel
    */
-  // ==============================================================
-  //
-  // ==============================================================
   const handleBackup = async (event) => {
     event.preventDefault();
 
@@ -712,6 +625,9 @@ function ModernBackup() {
         toast.error('Please specify a hostname or an inventory file.');
         return;
     }
+
+    // Switch to execute tab immediately
+    setCurrentBackupTab("execute");
 
     // Set UI state to show loading
     setBackupStatus(null);
@@ -744,6 +660,7 @@ function ModernBackup() {
         console.log("Backup API response:", data);
         setBackupStatus('success');
         setProgress(100);
+        setCurrentBackupTab("results");
         toast.success('Backup completed successfully!', { id: 'backup-toast' });
 
     } catch (error) {
@@ -751,9 +668,11 @@ function ModernBackup() {
         console.error("Backup failed:", error);
         setBackupStatus('error');
         setProgress(0);
+        setCurrentBackupTab("results");
         toast.error(`Backup failed: ${error.message}`, { id: 'backup-toast' });
     }
-};
+  };
+
   /**
    * Initiates the restore process
    * Transitions to Execute tab and simulates restore progress
@@ -783,6 +702,7 @@ function ModernBackup() {
       setParameters({ hostname: '', inventory_file: '', username: '', password: '', backup_file: '' });
       setBackupStatus(null);
       setProgress(0);
+      setCurrentBackupTab("select");
     } else if (activeTab === 'restore') {
       setCurrentTab('restore');
       setRestoreStatus(null);
@@ -854,7 +774,7 @@ function ModernBackup() {
   }, []);
 
   /**
-   * Fetches host devices for restore form
+   * Fetches host devices for restore form - FIXED: Added proper error handling for API response format
    */
   useEffect(() => {
     if (activeTab !== 'restore') return;
@@ -868,17 +788,52 @@ function ModernBackup() {
         }
         const data = await response.json();
         
-        // Map the API response to the expected format
-        const hostOptions = data.devices.map(device => ({
-          value: device.name, // Use device.name from the API response
-          label: device.name,
-          description: `Backups: ${device.backup_count || 0}`
-        }));
+        console.log('Hosts API response:', data); // Debug log
+        
+        // Handle different API response formats
+        let hostOptions = [];
+        
+        if (data.devices && Array.isArray(data.devices)) {
+          // Format 1: { devices: [{ name: "device1", backup_count: 5 }, ...] }
+          hostOptions = data.devices.map(device => ({
+            value: device.name,
+            label: device.name,
+            description: `Backups: ${device.backup_count || 0}`
+          }));
+        } else if (data.devices && typeof data.devices === 'object') {
+          // Format 2: { devices: { "device1": ["file1", "file2"], ... } }
+          hostOptions = Object.keys(data.devices).map(deviceName => ({
+            value: deviceName,
+            label: deviceName,
+            description: `Backups: ${data.devices[deviceName]?.length || 0}`
+          }));
+        } else if (data.status === 'success' && data.devices) {
+          // Format 3: { status: "success", devices: { ... } }
+          hostOptions = Object.keys(data.devices).map(deviceName => ({
+            value: deviceName,
+            label: deviceName,
+            description: `Backups: ${data.devices[deviceName]?.length || 0}`
+          }));
+        } else {
+          // Fallback: Try to extract device names from the response
+          const deviceNames = Object.keys(data).filter(key => 
+            key !== 'status' && key !== 'error' && key !== 'path'
+          );
+          if (deviceNames.length > 0) {
+            hostOptions = deviceNames.map(deviceName => ({
+              value: deviceName,
+              label: deviceName,
+              description: `Backups: ${Array.isArray(data[deviceName]) ? data[deviceName].length : 0}`
+            }));
+          }
+        }
+        
         setHosts(hostOptions);
         
       } catch (error) {
         console.error('Error fetching hosts:', error);
         setErrorRestore('Failed to load host devices');
+        setHosts([]); // Ensure hosts is always an array
         toast.error("Unable to fetch host devices. Please check your connection.");
       } finally {
         setLoadingHosts(false);
@@ -888,7 +843,7 @@ function ModernBackup() {
   }, [activeTab]);
 
   /**
-   * Fetches backup files when a host is selected
+   * Fetches backup files when a host is selected - FIXED: Added proper error handling for API response format
    */
   useEffect(() => {
     if (activeTab !== 'restore') return;
@@ -908,12 +863,43 @@ function ModernBackup() {
         }
         const data = await response.json();
         
-        // Map the API response to the expected format
-        const backupOptions = data.backups.map(backup => ({
-          value: backup.name, // Use backup.name from the API response
-          label: backup.name,
-          description: `Size: ${formatFileSize(backup.size)} • Modified: ${formatTimestamp(backup.modified)}`
-        }));
+        console.log('Backups API response:', data); // Debug log
+        
+        let backupOptions = [];
+        
+        if (data.backups && Array.isArray(data.backups)) {
+          // Format 1: { backups: [{ name: "file1", size: 1234, modified: 1234567890 }, ...] }
+          backupOptions = data.backups.map(backup => ({
+            value: backup.name,
+            label: backup.name,
+            description: `Size: ${formatFileSize(backup.size)} • Modified: ${formatTimestamp(backup.modified)}`
+          }));
+        } else if (Array.isArray(data)) {
+          // Format 2: Direct array of backup file names
+          backupOptions = data.map(backupFile => ({
+            value: backupFile,
+            label: backupFile,
+            description: 'Backup file'
+          }));
+        } else if (data.devices && data.devices[selectedHost]) {
+          // Format 3: From the devices endpoint structure
+          backupOptions = data.devices[selectedHost].map(backupFile => ({
+            value: backupFile,
+            label: backupFile,
+            description: 'Backup file'
+          }));
+        } else if (typeof data === 'object') {
+          // Format 4: Try to find backup files in the response object
+          const backupFiles = Object.values(data).find(value => Array.isArray(value));
+          if (backupFiles) {
+            backupOptions = backupFiles.map(backupFile => ({
+              value: backupFile,
+              label: backupFile,
+              description: 'Backup file'
+            }));
+          }
+        }
+        
         setBackups(backupOptions);
         
       } catch (error) {
@@ -1091,8 +1077,8 @@ function ModernBackup() {
             <ChevronLeft className="h-3 w-3" />
           )}
         </button>
-        <div className="flex flex-col justify-center"> {/* Added justify-center for vertical alignment */}
-          <h1 className="text-lg font-semibold text-foreground dark:text-gray-100 leading-tight"> {/* Removed pt-0.5, added leading-tight */}
+        <div className="flex flex-col justify-center">
+          <h1 className="text-lg font-semibold text-foreground dark:text-gray-100 leading-tight">
             {activeTab === 'backup' ? 'Backup Device' : 'Restore Device'}
           </h1>
         </div>
@@ -1119,8 +1105,8 @@ function ModernBackup() {
         </div>
         {!isCollapsed && (
           <div className="overflow-hidden">
-            <h2 className="font-semibold text-foreground dark:text-gray-100 truncate leading-tight">Operations</h2> {/* Added leading-tight */}
-            <p className="text-xs text-muted-foreground dark:text-gray-400 truncate leading-tight mt-0.5">Backups</p> {/* Added leading-tight and mt-0.5 */}
+            <h2 className="font-semibold text-foreground dark:text-gray-100 truncate leading-tight">Operations</h2>
+            <p className="text-xs text-muted-foreground dark:text-gray-400 truncate leading-tight mt-0.5">Backups</p>
           </div>
         )}
       </div>
@@ -1146,9 +1132,9 @@ function ModernBackup() {
                 <div key={step} className="flex items-center">
                   <div className={`
                     w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-                    ${progress >= (step === 1 ? 0 : step === 2 ? 10 : 100)
+                    ${currentBackupTab === (step === 1 ? 'select' : step === 2 ? 'execute' : 'results')
                       ? 'bg-primary dark:bg-gray-700 text-primary-foreground dark:text-gray-100'
-                      : backupStatus === 'success' && step === 3
+                      : backupStatus === 'success' && step <= 3
                         ? 'bg-green-500 dark:bg-green-600 text-white'
                         : 'bg-muted dark:bg-gray-700 text-muted-foreground dark:text-gray-400'
                     }
@@ -1156,7 +1142,7 @@ function ModernBackup() {
                     {backupStatus === 'success' && step <= 3 ? '✓' : step}
                   </div>
                   <span className={`ml-2 text-sm ${
-                    progress >= (step === 1 ? 0 : step === 2 ? 10 : 100)
+                    currentBackupTab === (step === 1 ? 'select' : step === 2 ? 'execute' : 'results')
                       ? 'font-medium text-gray-900 dark:text-gray-100'
                       : 'text-muted-foreground dark:text-gray-400'
                   }`}>
@@ -1164,40 +1150,104 @@ function ModernBackup() {
                   </span>
                   {step < 3 && (
                     <div className={`w-12 h-px mx-4 ${
-                      progress >= (step === 1 ? 10 : 100) ? 'bg-green-500 dark:bg-green-600' : 'bg-muted dark:bg-gray-700'
+                      (step === 1 && currentBackupTab !== 'select') || (step === 2 && currentBackupTab === 'results')
+                        ? 'bg-green-500 dark:bg-green-600'
+                        : 'bg-muted dark:bg-gray-700'
                     }`} />
                   )}
                 </div>
               ))}
             </div>
           </div>
-          <div className="border rounded-lg overflow-hidden bg-card dark:bg-black">
-            <div className="space-y-6 p-6">
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Device Selection</h3>
-                <DeviceTargetSelector 
-                  parameters={parameters}
-                  onParamChange={handleParamChange}
-                />
+
+          <Tabs value={currentBackupTab} className="w-full">
+            <TabsContent value="select" className="mt-6">
+              <div className="border rounded-lg overflow-hidden bg-card dark:bg-black p-6 space-y-6">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Device Selection</h3>
+                  <DeviceTargetSelector 
+                    parameters={parameters}
+                    onParamChange={handleParamChange}
+                  />
+                </div>
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Authentication</h3>
+                  <DeviceAuthFields 
+                    parameters={parameters}
+                    onParamChange={handleParamChange}
+                  />
+                </div>
+                <div className="flex justify-end pt-4">
+                  <Button
+                    onClick={handleBackup}
+                    disabled={!isBackupValid}
+                    className="bg-primary dark:bg-gray-700 text-primary-foreground dark:text-gray-100 hover:bg-primary/90 dark:hover:bg-gray-600"
+                  >
+                    Start Backup Process
+                  </Button>
+                </div>
               </div>
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Authentication</h3>
-                <DeviceAuthFields 
-                  parameters={parameters}
-                  onParamChange={handleParamChange}
-                />
+            </TabsContent>
+
+            <TabsContent value="execute" className="mt-6">
+              <div className="p-6 space-y-6 bg-card dark:bg-black rounded-lg border border-border dark:border-gray-700">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Backup in Progress</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                    <span>Running backup operation...</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <div className="h-2 bg-muted dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary dark:bg-gray-400 transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-end pt-4">
-                <Button
-                  onClick={handleBackup}
-                  disabled={!isBackupValid}
-                  className="bg-primary dark:bg-gray-700 text-primary-foreground dark:text-gray-100 hover:bg-primary/90 dark:hover:bg-gray-600"
-                >
-                  Start Backup Process
-                </Button>
+            </TabsContent>
+
+            <TabsContent value="results" className="mt-6">
+              <div className="p-6 space-y-6 bg-card dark:bg-black rounded-lg border border-border dark:border-gray-700">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Backup Results</h3>
+                {backupStatus === 'success' ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-md">
+                      <div className="flex items-center">
+                        <div className="h-10 w-10 flex items-center justify-center rounded-full bg-green-100 dark:bg-green-800/30">
+                          <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+                        </div>
+                        <div className="ml-4">
+                          <h4 className="text-lg font-medium text-green-800 dark:text-green-200">Backup Successful</h4>
+                          <p className="mt-1 text-green-700 dark:text-green-300">Device configuration has been backed up successfully.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-md">
+                    <div className="flex items-center">
+                      <div className="h-10 w-10 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-800/30">
+                        <AlertCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
+                      </div>
+                      <div className="ml-4">
+                        <h4 className="text-lg font-medium text-red-800 dark:text-red-200">Backup Failed</h4>
+                        <p className="mt-1 text-red-700 dark:text-red-300">An error occurred during backup. Please try again.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="flex justify-end pt-4">
+                  <Button
+                    onClick={handleReset}
+                    className="bg-primary dark:bg-gray-700 text-primary-foreground dark:text-gray-100 hover:bg-primary/90 dark:hover:bg-gray-600"
+                  >
+                    Start New Backup
+                  </Button>
+                </div>
               </div>
-            </div>
-          </div>
+            </TabsContent>
+          </Tabs>
         </div>
       );
     } else if (activeTab === 'restore') {
@@ -1238,7 +1288,6 @@ function ModernBackup() {
               ))}
             </div>
           </div>
-
 
           <Tabs value={currentTab} className="w-full">
             <TabsContent value="restore" className="mt-6">

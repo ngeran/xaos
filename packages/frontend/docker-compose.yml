@@ -27,13 +27,15 @@ services:
     volumes:
       # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Map the shared data directory
-      - ./../../packages/shared:/app/shared:ro
-      # Map the inventories direcrory
+      # Map the shared data directory - FIXED PATH
+      - ./../../packages/shared:/shared:ro
+      # Map the inventories directory - FIXED PATH
       - ./../../packages/shared/data/inventories:/shared/data/inventories:ro
     environment:
       RUST_LOG: "debug,rust_backend=debug"
       HOST_PROJECT_ROOT: "${PROJECT_ROOT}"
+      # Add environment variable for data path
+      DATA_PATH: "/shared/data"
     depends_on:
       python_runner:
         condition: service_healthy
@@ -52,7 +54,7 @@ services:
       dockerfile: Dockerfile
     command: uvicorn api:app --host 0.0.0.0 --port 8000
     volumes:
-      # Map the shared data directory
+      # Map the shared data directory - FIXED PATH
       - ./../../packages/shared:/shared
     ports:
       - "8001:8000"
