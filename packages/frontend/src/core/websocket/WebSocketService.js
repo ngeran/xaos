@@ -1,11 +1,12 @@
 // File Path: src/core/websocket/WebSocketService.js
-// Version: 2.1.6 (Patched)
+// Version: 2.1.7 (Enhanced)
 // Description: Core WebSocket service for managing connections to Rust backend
 // Changes: Fixed timing configuration to match backend settings.
 //          Enhanced debugging and pong detection.
 //          Added detailed logging for heartbeat operations.
 //          FIXED: Implemented Web Workers for reliable heartbeat in background tabs.
 //          FIXED: Adjusted ping/pong intervals for better background tab stability.
+//          ADDED: Automatic subscription to job events on connection.
 //
 // Key Features:
 // - Automatic reconnection with exponential backoff
@@ -15,6 +16,7 @@
 // - Event-based communication
 // - Connection rate limiting
 // - Enhanced debugging and error reporting
+// - Automatic job event subscription
 //
 // Detail How-To Guide:
 // 1. Import and use the singleton instance: import { webSocketService } from './WebSocketService'
@@ -22,8 +24,10 @@
 // 3. Send messages: webSocketService.send({type: 'MessageType', data: {...}})
 // 4. Subscribe to topics: webSocketService.subscribe(['topic1', 'topic2'])
 // 5. Handle disconnections with automatic retry logic
+// 6. Automatically subscribes to job events on connection
 //
 // Change Log:
+// - 2.1.7 (2024-01-19): Added automatic subscription to job events on connection
 // - 2.1.6 (2024-01-18): Implemented Web Workers for heartbeat, increased timeouts, improved background stability.
 // - 2.1.5 (2024-01-17): Fixed timing configuration to match backend, enhanced pong detection.
 // - 2.1.4 (2024-01-17): Fixed ping message format and enhanced debugging.
@@ -45,6 +49,7 @@ import { logger } from '../utils/logger';
  * - Connection rate limiting to prevent resource exhaustion
  * - Enhanced debugging capabilities with timing fixes
  * - Utilizes Web Workers for reliable heartbeat in background tabs.
+ * - Automatic subscription to job events for real-time updates
  */
 export class WebSocketService extends EventEmitter {
   constructor(options = {}) {
@@ -70,7 +75,11 @@ export class WebSocketService extends EventEmitter {
       
       minReconnectDelay: 1000,
       connectionTimeout: 10000,
-      debug: import.meta.env.VITE_WS_DEBUG === 'true'
+      debug: import.meta.env.VITE_WS_DEBUG === 'true',
+      
+      // Auto-subscription settings
+      autoSubscribe: true,
+      defaultTopics: ['jobs', 'data:jobs', 'jobs:all', 'navigation', 'filesystem']
     };
 
     this.options = { ...defaultOptions, ...options };
@@ -91,7 +100,9 @@ export class WebSocketService extends EventEmitter {
       url: this.options.url,
       reconnect: this.options.reconnect,
       pingInterval: this.options.pingInterval,
-      pongTimeout: this.options.pongTimeout
+      pongTimeout: this.options.pongTimeout,
+      autoSubscribe: this.options.autoSubscribe,
+      defaultTopics: this.options.defaultTopics
     });
   }
 
@@ -168,6 +179,7 @@ export class WebSocketService extends EventEmitter {
 
   /**
    * Handle successful connection event
+   * Enhanced: Automatically subscribes to job events on connection
    */
   handleOpen = () => {
     this._debug('WebSocket connection established');
@@ -177,13 +189,30 @@ export class WebSocketService extends EventEmitter {
     this.reconnectAttempts = 0;
     this.emit('connected');
     
+    // Automatically subscribe to job events for real-time updates
+    if (this.options.autoSubscribe) {
+      this.subscribeToDefaultTopics();
+    }
+    
     this.processQueue();
     this.startHeartbeat();
   };
 
   /**
+   * Automatically subscribe to default topics for real-time job updates
+   * This ensures the frontend receives job progress events automatically
+   */
+  subscribeToDefaultTopics() {
+    if (this.options.defaultTopics && this.options.defaultTopics.length > 0) {
+      this._debug('Auto-subscribing to default topics:', this.options.defaultTopics);
+      this.subscribe(this.options.defaultTopics);
+    }
+  }
+
+  /**
    * Handle incoming messages with enhanced pong detection
    * FIXED: Added comprehensive pong detection for multiple message formats
+   * Enhanced: Added detailed logging for job events
    */
   handleMessage = (event) => {
     try {
@@ -194,6 +223,16 @@ export class WebSocketService extends EventEmitter {
       
       const message = JSON.parse(event.data);
       this.emit('message', message);
+      
+      // Enhanced logging for job events
+      if (message.type === 'JobEvent' || message.payload?.job_id) {
+        this._debug('📡 JOB EVENT RECEIVED', {
+          job_id: message.payload?.job_id,
+          device: message.payload?.device,
+          event_type: message.payload?.event_type,
+          status: message.payload?.status
+        });
+      }
       
       // Enhanced pong detection with multiple format support
       let isPong = false;
@@ -420,14 +459,29 @@ export class WebSocketService extends EventEmitter {
 
   /**
    * Subscribe to one or more topics
+   * Enhanced: Added better logging for subscription operations
    */
   subscribe(topics) {
     if (!Array.isArray(topics)) {
       topics = [topics];
     }
-    const message = { type: 'Subscribe', payload: { topics } };
-    this.send(message);
-    this._debug(`Subscribed to topics`, topics);
+    
+    // Filter out empty or invalid topics
+    const validTopics = topics.filter(topic => topic && typeof topic === 'string');
+    
+    if (validTopics.length === 0) {
+      this._debug('No valid topics provided for subscription');
+      return;
+    }
+    
+    const message = { type: 'Subscribe', payload: { topics: validTopics } };
+    const success = this.send(message);
+    
+    if (success) {
+      this._debug(`Successfully subscribed to topics:`, validTopics);
+    } else {
+      this._debug(`Subscription queued for topics:`, validTopics);
+    }
   }
 
   /**
@@ -598,7 +652,9 @@ export class WebSocketService extends EventEmitter {
       url: this.options.url,
       pingInterval: this.options.pingInterval,
       pongTimeout: this.options.pongTimeout,
-      wsReadyState: this.ws?.readyState ?? 'N/A'
+      wsReadyState: this.ws?.readyState ?? 'N/A',
+      autoSubscribe: this.options.autoSubscribe,
+      subscribedTopics: this.options.defaultTopics
     };
   }
 }

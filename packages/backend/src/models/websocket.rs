@@ -1,16 +1,18 @@
 // File: backend/src/models/websocket.rs
-// Version: 3.0.3
+// Version: 3.1.0
 // Key Features:
 // - Added REQUEST_CONNECTION_INFO and REQUEST_ACTIVE_CONNECTIONS message types
 // - Fixed message type consistency between frontend and backend
 // - Ensure proper Pong message serialization format
 // - FIXED: toString typo changed to to_string
+// - Added job event handling for real-time device operation updates
 //
 // How to Guide:
 // 1. Frontend should send REQUEST_CONNECTION_INFO to get connection details
 // 2. Frontend should send REQUEST_ACTIVE_CONNECTIONS to get connection stats
 // 3. Backend responds with CONNECTION_INFO and ACTIVE_CONNECTIONS respectively
 // 4. Pong messages are serialized as {type: "Pong"} for frontend compatibility
+// 5. Job events are broadcast for real-time device operation updates
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -115,6 +117,23 @@ pub enum WsMessage {
         payload: DataUpdatePayload,
     },
 
+    // Job events for real-time device operation updates
+    #[serde(rename = "JobEvent")]
+    JobEvent {
+        payload: JobEventPayload,
+    },
+
+    // Job subscription management
+    #[serde(rename = "SubscribeToJobs")]
+    SubscribeToJobs {
+        payload: JobSubscriptionPayload,
+    },
+
+    #[serde(rename = "UnsubscribeFromJobs")]
+    UnsubscribeFromJobs {
+        payload: JobUnsubscribePayload,
+    },
+
     // Debug messages
     #[serde(rename = "Debug")]
     Debug {
@@ -194,6 +213,32 @@ pub struct DataUpdatePayload {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Payload for job events (device operations: backup, restore, validation, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobEventPayload {
+    pub job_id: String,
+    pub device: String,
+    pub job_type: String,
+    pub event_type: String,
+    pub status: String,
+    pub timestamp: DateTime<Utc>,
+    pub data: serde_json::Value,
+    pub error: Option<String>,
+}
+
+/// Payload for subscribing to job events with optional filtering
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobSubscriptionPayload {
+    pub device_filter: Option<String>,
+    pub job_type_filter: Option<String>,
+}
+
+/// Payload for unsubscribing from job events
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobUnsubscribePayload {
+    pub subscription_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DebugPayload {
     pub level: String,
@@ -231,6 +276,17 @@ pub struct ConnectionInfo {
     pub bytes_sent: u64,
     pub bytes_received: u64,
     pub ping_latency_ms: Option<u64>,
+    // Job event subscriptions
+    pub job_subscriptions: Vec<JobSubscription>,
+}
+
+/// Job subscription details for connection tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobSubscription {
+    pub subscription_id: String,
+    pub device_filter: Option<String>,
+    pub job_type_filter: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 impl ConnectionInfo {
@@ -251,6 +307,7 @@ impl ConnectionInfo {
             bytes_sent: 0,
             bytes_received: 0,
             ping_latency_ms: None,
+            job_subscriptions: Vec::new(),
         }
     }
 
@@ -298,6 +355,47 @@ impl ConnectionInfo {
             bytes_received: self.bytes_received,
         }
     }
+
+    /// Add job subscription
+    pub fn add_job_subscription(&mut self, device_filter: Option<String>, job_type_filter: Option<String>) -> String {
+        let subscription_id = Uuid::new_v4().to_string();
+        let subscription = JobSubscription {
+            subscription_id: subscription_id.clone(),
+            device_filter,
+            job_type_filter,
+            created_at: Utc::now(),
+        };
+        self.job_subscriptions.push(subscription);
+        subscription_id
+    }
+
+    /// Remove job subscription
+    pub fn remove_job_subscription(&mut self, subscription_id: &str) -> bool {
+        let initial_len = self.job_subscriptions.len();
+        self.job_subscriptions.retain(|sub| sub.subscription_id != subscription_id);
+        self.job_subscriptions.len() < initial_len
+    }
+
+    /// Check if connection should receive job event based on subscriptions
+    pub fn should_receive_job_event(&self, job_event: &JobEventPayload) -> bool {
+        if self.job_subscriptions.is_empty() {
+            return false;
+        }
+
+        self.job_subscriptions.iter().any(|sub| {
+            // Check device filter
+            let device_match = sub.device_filter.as_ref().map_or(true, |filter| {
+                filter == "*" || filter == &job_event.device
+            });
+            
+            // Check job type filter
+            let job_type_match = sub.job_type_filter.as_ref().map_or(true, |filter| {
+                filter == "*" || filter == &job_event.job_type
+            });
+
+            device_match && job_type_match
+        })
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════
@@ -310,6 +408,9 @@ pub enum SubscriptionTopic {
     Navigation,
     FileSystem,
     DataUpdates(String),
+    JobEvents,
+    JobEventsForDevice(String),
+    JobEventsForType(String),
     Debug,
     Metrics,
     All,
@@ -320,9 +421,11 @@ impl ToString for SubscriptionTopic {
     fn to_string(&self) -> String {
         match self {
             Self::Navigation => "navigation".to_string(),
-            // FIXED: Changed toString to to_string
             Self::FileSystem => "filesystem".to_string(),
             Self::DataUpdates(source) => format!("data:{}", source),
+            Self::JobEvents => "jobs:all".to_string(),
+            Self::JobEventsForDevice(device) => format!("jobs:device:{}", device),
+            Self::JobEventsForType(job_type) => format!("jobs:type:{}", job_type),
             Self::Debug => "debug".to_string(),
             Self::Metrics => "metrics".to_string(),
             Self::All => "all".to_string(),
@@ -338,9 +441,15 @@ impl From<&str> for SubscriptionTopic {
             "filesystem" => Self::FileSystem,
             "debug" => Self::Debug,
             "metrics" => Self::Metrics,
-            "all" => Self::All,
+            "jobs:all" => Self::JobEvents,
             s if s.starts_with("data:") => {
                 Self::DataUpdates(s.strip_prefix("data:").unwrap_or("").to_string())
+            }
+            s if s.starts_with("jobs:device:") => {
+                Self::JobEventsForDevice(s.strip_prefix("jobs:device:").unwrap_or("").to_string())
+            }
+            s if s.starts_with("jobs:type:") => {
+                Self::JobEventsForType(s.strip_prefix("jobs:type:").unwrap_or("").to_string())
             }
             s if s.starts_with("direct:") => {
                 if let Ok(uuid) = Uuid::parse_str(s.strip_prefix("direct:").unwrap_or("")) {
@@ -368,6 +477,7 @@ pub struct WsConfig {
     pub debug: DebugConfig,
     pub collect_metrics: bool,
     pub max_message_size: usize,
+    pub job_event_history_size: usize,
 }
 
 impl Default for WsConfig {
@@ -380,6 +490,7 @@ impl Default for WsConfig {
             debug: DebugConfig::default(),
             collect_metrics: true,
             max_message_size: 1024 * 1024, // 1MB
+            job_event_history_size: 1000,   // Keep last 1000 job events
         }
     }
 }

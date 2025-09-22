@@ -1,15 +1,17 @@
 // File: backend/src/services/websocket_service.rs
-// Version: 3.0.6
+// Version: 3.0.7
 // Key Features:
 // - Enhanced Pong response handling with proper formatting
 // - Added dedicated pong response method
 // - Improved debugging for ping/pong operations
 // - Fixed connection timing to prevent premature timeouts
+// - Added job event broadcasting functionality
 //
 // How to Guide:
 // 1. Backend responds to Ping with properly formatted Pong messages
 // 2. Enhanced debugging shows detailed ping/pong timing
 // 3. Fixed connection timing to prevent premature timeouts
+// 4. Job events are broadcast to subscribed connections
 
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{
@@ -32,7 +34,8 @@ use chrono::Utc;
 use crate::models::{
     websocket::{
         ConnectionId, SubscriptionTopic, WsConfig, WsMessage, ConnectionInfo,
-        ConnectionDetails, ConnectionStats, DebugPayload,
+        ConnectionDetails, ConnectionStats, DebugPayload, JobEventPayload,
+        JobSubscriptionPayload, ConnectionSummary
     },
     ApiError,
 };
@@ -227,7 +230,84 @@ impl WebSocketService {
             Err(ApiError::WebSocketError("Connection not found".to_string()))
         }
     }
+
+    /// Broadcast job event to subscribed connections
+    #[instrument(name = "broadcast_job_event", level = "info", skip(self, job_event))]
+    pub async fn broadcast_job_event(&self, job_event: JobEventPayload) -> Result<(), ApiError> {
+        let connections = self.connections.read().await;
+        
+        // Count recipients for logging
+        let mut recipient_count = 0;
+        
+        for (connection_id, conn) in connections.iter() {
+            if conn.info.should_receive_job_event(&job_event) {
+                let ws_message = WsMessage::JobEvent {
+                    payload: job_event.clone(),
+                };
+                
+                if let Err(e) = self.send_to_connection(*connection_id, ws_message).await {
+                    warn!("Failed to send job event to connection {}: {}", connection_id, e);
+                } else {
+                    recipient_count += 1;
+                }
+            }
+        }
+        
+        debug!(
+            "Job event broadcast for job {} to {} recipients",
+            job_event.job_id, recipient_count
+        );
+        
+        Ok(())
+    }
+
+    /// Get active connections with details
+    pub async fn get_active_connections(&self) -> Vec<ConnectionSummary> {
+        let connections = self.connections.read().await;
+        connections.values()
+            .map(|c| c.info.to_summary())
+            .collect()
+    }
+
+    /// Handle job subscription request
+    // In the handle_job_subscription method, fix the move issues:
+async fn handle_job_subscription(
+    &self,
+    connection_id: ConnectionId,
+    payload: JobSubscriptionPayload,
+) -> Result<(), ApiError> {
+    let mut connections = self.connections.write().await;
+    if let Some(conn) = connections.get_mut(&connection_id) {
+        // Clone the values before moving them
+        let device_filter_clone = payload.device_filter.clone();
+        let job_type_filter_clone = payload.job_type_filter.clone();
+        
+        let subscription_id = conn.info.add_job_subscription(
+            payload.device_filter,
+            payload.job_type_filter,
+        );
+        
+        // Send subscription confirmation - use the cloned values
+        let response = WsMessage::Custom {
+            event: "job_subscription_confirmed".to_string(),
+            payload: serde_json::json!({
+                "subscription_id": subscription_id,
+                "device_filter": device_filter_clone,
+                "job_type_filter": job_type_filter_clone
+            }),
+        };
+        
+        self.send_to_connection(connection_id, response).await?;
+        
+        info!(
+            "Job subscription created for {}: device_filter={:?}, job_type_filter={:?}",
+            connection_id, device_filter_clone, job_type_filter_clone
+        );
+    }
+    
+    Ok(())
 }
+    }
 
 // ═══════════════════════════════════════════════════════════════════════════════════
 // CONNECTION HANDLING WITH METRICS AND DEBUGGING
@@ -615,6 +695,10 @@ impl WebSocketService {
             WsMessage::Unsubscribe { payload } => {
                 info!("Unsubscribe request from {}: {:?}", connection_id, payload.topics);
                 self.handle_unsubscribe(connection_id, payload.topics).await?;
+            }
+            WsMessage::SubscribeToJobs { payload } => {
+                info!("Job subscription request from {}", connection_id);
+                self.handle_job_subscription(connection_id, payload).await?;
             }
             WsMessage::Custom { event, payload } => {
                 info!("Custom event '{}' from {}", event, connection_id);

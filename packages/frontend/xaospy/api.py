@@ -1,19 +1,22 @@
 # =================================================================================================
 # FILE: api.py (FastAPI Endpoint)
+# VERSION: 2.0.1
 # OVERVIEW:
 # A FastAPI application that exposes API endpoints for backup and restore operations.
 # It acts as a bridge between the Rust backend and the Python worker scripts.
-# Updated to include a /health endpoint for Docker health checks.
+# Updated to include WebSocket integration for real-time job progress updates.
 # =================================================================================================
 import json
 import asyncio
 import os
 import subprocess
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 import logging
+import uuid
+from datetime import datetime
 
 # Import the main function using the full module path from the project root.
 from scripts.backup_and_restore.run import main as run_orchestrator
@@ -21,6 +24,45 @@ from scripts.backup_and_restore.run import main as run_orchestrator
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# WebSocket manager for real-time updates
+class WebSocketManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(
+            f"WebSocket client connected. Total connections: {len(self.active_connections)}"
+        )
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        logger.info(
+            f"WebSocket client disconnected. Total connections: {len(self.active_connections)}"
+        )
+
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected WebSocket clients"""
+        disconnected_connections = []
+
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                logger.error(f"Failed to send WebSocket message: {e}")
+                disconnected_connections.append(connection)
+
+        # Remove disconnected connections
+        for connection in disconnected_connections:
+            self.disconnect(connection)
+
+
+# Initialize WebSocket manager
+ws_manager = WebSocketManager()
 
 
 # Pydantic models to define the expected request body for each operation.
@@ -39,6 +81,114 @@ class RestoreRequest(BaseModel):
     restore_type: str = "override"
     confirmed_commit_timeout: int = 0
     commit_timeout: int = 300
+
+
+# WebSocket endpoint for real-time job progress
+@app.websocket("/ws/jobs")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time job progress updates"""
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive - wait for ping or close
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+        logger.info("WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
+
+
+async def send_job_progress(
+    job_id: str,
+    device: str,
+    job_type: str,
+    event_type: str,
+    status: str,
+    data: dict,
+    error: Optional[str] = None,
+):
+    """
+    Send job progress update to all WebSocket clients
+
+    Args:
+        job_id: Unique job identifier
+        device: Device hostname
+        job_type: Type of job (backup, restore, validation, upgrade)
+        event_type: Event type (started, progress, completed, failed)
+        status: Current status (queued, in_progress, completed, failed)
+        data: Job-specific progress data
+        error: Optional error message for failed jobs
+    """
+    event = {
+        "type": "job_progress",
+        "job_id": job_id,
+        "device": device,
+        "job_type": job_type,
+        "event_type": event_type,
+        "status": status,
+        "timestamp": datetime.now().isoformat(),
+        "data": data,
+        "error": error,
+    }
+
+    await ws_manager.broadcast(event)
+    logger.info(f"Job progress sent: {job_id} - {device} - {event_type}")
+
+
+async def read_process_output(process, job_id: str, device: str, job_type: str):
+    """
+    Read process output line by line and send progress updates
+
+    Args:
+        process: The subprocess to read from
+        job_id: Job identifier for progress updates
+        device: Device name for progress updates
+        job_type: Type of job for progress updates
+
+    Returns:
+        The complete output as a string
+    """
+    output = ""
+    while True:
+        # Read line from stdout
+        line = await process.stdout.readline()
+        if not line:
+            break
+
+        output_line = line.decode().strip()
+        output += output_line + "\n"
+
+        logger.debug(f"Process output: {output_line}")
+
+        # Try to parse JSON progress updates from the script
+        try:
+            progress_data = json.loads(output_line)
+            if isinstance(progress_data, dict):
+                await send_job_progress(
+                    job_id=job_id,
+                    device=device,
+                    job_type=job_type,
+                    event_type="progress",
+                    status="in_progress",
+                    data=progress_data,
+                )
+        except json.JSONDecodeError:
+            # Not a JSON line, send as generic progress
+            if output_line and not output_line.isspace():
+                await send_job_progress(
+                    job_id=job_id,
+                    device=device,
+                    job_type=job_type,
+                    event_type="progress",
+                    status="in_progress",
+                    data={"message": output_line, "raw_output": True},
+                )
+
+    return output
 
 
 @app.get("/health")
@@ -63,8 +213,13 @@ async def list_backup_devices():
     try:
         for device_dir in base_path.iterdir():
             if device_dir.is_dir():
-                files = [f.name for f in device_dir.iterdir() if f.is_file()]
-                devices[device_dir.name] = files
+                files = [
+                    f.name
+                    for f in device_dir.iterdir()
+                    if f.is_file() and f.suffix in [".conf", ".cfg", ".txt", ".backup"]
+                ]
+                if files:  # Only include devices with backup files
+                    devices[device_dir.name] = files
 
         return {"status": "success", "devices": devices, "path": str(base_path)}
     except Exception as e:
@@ -74,9 +229,27 @@ async def list_backup_devices():
 @app.post("/api/backups/devices")
 async def backup_devices(request: BackupRequest):
     """
-    Triggers a backup operation.
+    Triggers a backup operation with real-time progress updates.
     """
-    logger.info(f"Received backup request for {request.hostname}")
+    job_id = str(uuid.uuid4())
+    device = request.hostname or "multiple_devices"
+
+    logger.info(f"Starting backup job {job_id} for {device}")
+
+    # Send job started event
+    await send_job_progress(
+        job_id=job_id,
+        device=device,
+        job_type="backup",
+        event_type="started",
+        status="in_progress",
+        data={
+            "inventory_file": request.inventory_file,
+            "username": request.username,
+            "has_password": bool(request.password),
+        },
+    )
+
     output = ""  # Initialize output to avoid unbound variable
     try:
         args = [
@@ -98,45 +271,133 @@ async def backup_devices(request: BackupRequest):
             f"Executing command: /usr/local/bin/python3 /xaospy/scripts/backup_and_restore/run.py {' '.join(args)}"
         )
 
+        # Create subprocess with pipes
         process = await asyncio.create_subprocess_exec(
             "/usr/local/bin/python3",  # Explicit Python path
             "/xaospy/scripts/backup_and_restore/run.py",
             *args,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT,  # Redirect stderr to stdout
             env={
-                "PYTHONPATH": "/xaospy:/usr/local/lib/python3.9/site-packages"  # Include site-packages for PyYAML
+                "PYTHONPATH": "/xaospy:/usr/local/lib/python3.9/site-packages",
+                "JOB_ID": job_id,  # Pass job ID to script for progress tracking
+                "DEVICE": device,
             },
         )
 
-        stdout, _ = await process.communicate()
-        output = stdout.decode().strip()
+        # Read output in real-time
+        output = await read_process_output(process, job_id, device, "backup")
 
-        logger.info(f"Script output: {output}")
+        # Wait for process to complete
+        return_code = await process.wait()
 
-        final_result_line = output.splitlines()[-1]
-        final_result = json.loads(final_result_line)
-        logger.info(f"Backup completed: {final_result}")
-        return final_result
+        if return_code == 0:
+            try:
+                # Try to parse the final result as JSON
+                final_result_line = (
+                    output.strip().splitlines()[-1] if output.strip() else "{}"
+                )
+                final_result = json.loads(final_result_line)
+
+                # Send job completed event
+                await send_job_progress(
+                    job_id=job_id,
+                    device=device,
+                    job_type="backup",
+                    event_type="completed",
+                    status="completed",
+                    data=final_result,
+                )
+
+                logger.info(f"Backup completed: {final_result}")
+                return final_result
+            except (json.JSONDecodeError, IndexError):
+                # If no valid JSON, return the raw output
+                result = {"status": "completed", "output": output.strip()}
+                await send_job_progress(
+                    job_id=job_id,
+                    device=device,
+                    job_type="backup",
+                    event_type="completed",
+                    status="completed",
+                    data=result,
+                )
+                return result
+        else:
+            error_msg = f"Backup failed with return code {return_code}"
+            logger.error(f"{error_msg}. Output: {output}")
+
+            # Send job failed event
+            await send_job_progress(
+                job_id=job_id,
+                device=device,
+                job_type="backup",
+                event_type="failed",
+                status="failed",
+                data={"return_code": return_code, "output": output},
+                error=error_msg,
+            )
+
+            raise HTTPException(status_code=500, detail=error_msg)
+
     except subprocess.CalledProcessError as e:
-        logger.error(f"Subprocess error: {e.stderr}")
-        raise HTTPException(status_code=500, detail=f"Execution error: {e.stderr}")
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error: {e}")
-        logger.error(f"Raw output: {output}")
-        raise HTTPException(
-            status_code=500, detail=f"Invalid JSON response from script: {e}"
+        error_msg = f"Subprocess error: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+
+        # Send job failed event
+        await send_job_progress(
+            job_id=job_id,
+            device=device,
+            job_type="backup",
+            event_type="failed",
+            status="failed",
+            data={"error": error_msg, "output": output},
+            error=error_msg,
         )
+
+        raise HTTPException(status_code=500, detail=f"Execution error: {error_msg}")
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(error_msg)
+
+        # Send job failed event
+        await send_job_progress(
+            job_id=job_id,
+            device=device,
+            job_type="backup",
+            event_type="failed",
+            status="failed",
+            data={"error": error_msg, "output": output},
+            error=error_msg,
+        )
+
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
 @app.post("/restore")
 async def restore_device(request: RestoreRequest):
     """
-    Triggers a restore operation.
+    Triggers a restore operation with real-time progress updates.
     """
+    job_id = str(uuid.uuid4())
+
+    logger.info(f"Starting restore job {job_id} for {request.hostname}")
+
+    # Send job started event
+    await send_job_progress(
+        job_id=job_id,
+        device=request.hostname,
+        job_type="restore",
+        event_type="started",
+        status="in_progress",
+        data={
+            "backup_file": request.backup_file,
+            "restore_type": request.restore_type,
+            "username": request.username,
+            "has_password": bool(request.password),
+        },
+    )
+
     output = ""  # Initialize output to avoid unbound variable
     try:
         args = [
@@ -162,33 +423,139 @@ async def restore_device(request: RestoreRequest):
             f"Executing restore command: /usr/local/bin/python3 /xaospy/scripts/backup_and_restore/run.py {' '.join(args)}"
         )
 
+        # Create subprocess with pipes
         process = await asyncio.create_subprocess_exec(
             "/usr/local/bin/python3",  # Explicit Python path
             "/xaospy/scripts/backup_and_restore/run.py",
             *args,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT,  # Redirect stderr to stdout
             env={
-                "PYTHONPATH": "/xaospy:/usr/local/lib/python3.9/site-packages"  # Include site-packages for PyYAML
+                "PYTHONPATH": "/xaospy:/usr/local/lib/python3.9/site-packages",
+                "JOB_ID": job_id,  # Pass job ID to script for progress tracking
+                "DEVICE": request.hostname,
             },
         )
-        stdout, _ = await process.communicate()
-        output = stdout.decode().strip()
 
-        logger.info(f"Restore script output: {output}")
+        # Read output in real-time
+        output = await read_process_output(process, job_id, request.hostname, "restore")
 
-        final_result_line = output.splitlines()[-1]
-        final_result = json.loads(final_result_line)
-        return final_result
+        # Wait for process to complete
+        return_code = await process.wait()
+
+        if return_code == 0:
+            try:
+                # Try to parse the final result as JSON
+                final_result_line = (
+                    output.strip().splitlines()[-1] if output.strip() else "{}"
+                )
+                final_result = json.loads(final_result_line)
+
+                # Send job completed event
+                await send_job_progress(
+                    job_id=job_id,
+                    device=request.hostname,
+                    job_type="restore",
+                    event_type="completed",
+                    status="completed",
+                    data=final_result,
+                )
+
+                return final_result
+            except (json.JSONDecodeError, IndexError):
+                # If no valid JSON, return the raw output
+                result = {"status": "completed", "output": output.strip()}
+                await send_job_progress(
+                    job_id=job_id,
+                    device=request.hostname,
+                    job_type="restore",
+                    event_type="completed",
+                    status="completed",
+                    data=result,
+                )
+                return result
+        else:
+            error_msg = f"Restore failed with return code {return_code}"
+            logger.error(f"{error_msg}. Output: {output}")
+
+            # Send job failed event
+            await send_job_progress(
+                job_id=job_id,
+                device=request.hostname,
+                job_type="restore",
+                event_type="failed",
+                status="failed",
+                data={"return_code": return_code, "output": output},
+                error=error_msg,
+            )
+
+            raise HTTPException(status_code=500, detail=error_msg)
+
     except subprocess.CalledProcessError as e:
-        logger.error(f"Subprocess error: {e.stderr}")
-        raise HTTPException(status_code=500, detail=f"Execution error: {e.stderr}")
+        error_msg = f"Subprocess error: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+
+        # Send job failed event
+        await send_job_progress(
+            job_id=job_id,
+            device=request.hostname,
+            job_type="restore",
+            event_type="failed",
+            status="failed",
+            data={"error": error_msg, "output": output},
+            error=error_msg,
+        )
+
+        raise HTTPException(status_code=500, detail=f"Execution error: {error_msg}")
     except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error: {e}")
+        error_msg = f"JSON decode error: {e}"
+        logger.error(error_msg)
         logger.error(f"Raw output: {output}")
+
+        # Send job failed event
+        await send_job_progress(
+            job_id=job_id,
+            device=request.hostname,
+            job_type="restore",
+            event_type="failed",
+            status="failed",
+            data={"raw_output": output},
+            error=error_msg,
+        )
+
         raise HTTPException(
             status_code=500, detail=f"Invalid JSON response from script: {e}"
         )
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(error_msg)
+
+        # Send job failed event
+        await send_job_progress(
+            job_id=job_id,
+            device=request.hostname,
+            job_type="restore",
+            event_type="failed",
+            status="failed",
+            data={"error": error_msg, "output": output},
+            error=error_msg,
+        )
+
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@app.get("/ws/connections")
+async def get_websocket_connections():
+    """Get current WebSocket connection count"""
+    return {"active_connections": len(ws_manager.active_connections)}
+
+
+# Health check for WebSocket connections
+@app.get("/ws/health")
+async def websocket_health():
+    """WebSocket health check endpoint"""
+    return {
+        "status": "healthy",
+        "active_connections": len(ws_manager.active_connections),
+        "timestamp": datetime.now().isoformat(),
+    }

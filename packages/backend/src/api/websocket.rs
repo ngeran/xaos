@@ -1,5 +1,9 @@
 // File: backend/src/api/websocket.rs
-// Fixed version addressing the 500 error
+// Version: 2.0.2
+// Key Features:
+// - Fixed move issues in job event broadcasting
+// - Removed unused variables
+// - Enhanced error handling
 
 use axum::{
     extract::{
@@ -17,7 +21,7 @@ use tracing::{error, info};
 
 use crate::{
     models::{
-        websocket::{SubscriptionTopic, WsMessage},
+        websocket::{SubscriptionTopic, WsMessage, JobEventPayload},
         ApiError,
     },
     AppState,
@@ -28,7 +32,9 @@ pub fn websocket_routes() -> Router<AppState> {
     Router::new()
         .route("/ws", get(ws_handler))
         .route("/status", get(get_status))
+        .route("/connections", get(get_connections))
         .route("/broadcast", post(broadcast_handler))
+        .route("/jobs/broadcast", post(broadcast_job_event_handler))
 }
 
 /// Handler for upgrading a connection to a WebSocket
@@ -60,6 +66,17 @@ async fn get_status(
     let stats = state.websocket_service.get_service_stats().await;
     info!("WebSocket status retrieved successfully");
     Ok(Json(stats))
+}
+
+/// Handler for getting active connections
+async fn get_connections(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    info!("Active connections request received");
+    
+    let connections = state.websocket_service.get_active_connections().await;
+    info!("Active connections retrieved: {}", connections.len());
+    Ok(Json(serde_json::json!(connections)))
 }
 
 /// Request body for broadcasting messages
@@ -106,5 +123,62 @@ async fn broadcast_handler(
         "status": "success",
         "message": "Broadcast sent successfully",
         "topic": payload.topic.to_string()
+    })))
+}
+
+/// Request body for broadcasting job events
+#[derive(Deserialize, Debug)]
+pub struct JobEventBroadcastPayload {
+    job_id: String,
+    device: String,
+    job_type: String,
+    event_type: String,
+    status: String,
+    data: serde_json::Value,
+    error: Option<String>,
+}
+
+/// Handler for broadcasting job events for real-time device operation updates
+async fn broadcast_job_event_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<JobEventBroadcastPayload>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    // Clone values for logging before moving them
+    let job_id_clone = payload.job_id.clone();
+    let device_clone = payload.device.clone();
+    
+    info!(
+        "Job event broadcast request received for job: {}, device: {}, type: {}",
+        job_id_clone, device_clone, payload.job_type
+    );
+
+    // Create job event payload - move the values
+    let job_event = JobEventPayload {
+        job_id: payload.job_id,
+        device: payload.device,
+        job_type: payload.job_type,
+        event_type: payload.event_type,
+        status: payload.status,
+        timestamp: chrono::Utc::now(),
+        data: payload.data,
+        error: payload.error,
+    };
+
+    // Broadcast to job events topic
+    state
+        .websocket_service
+        .broadcast_job_event(job_event)
+        .await?;
+
+    info!(
+        "Job event broadcast successful for job: {}, device: {}",
+        job_id_clone, device_clone
+    );
+    
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "message": "Job event broadcast successfully",
+        "job_id": job_id_clone,
+        "device": device_clone
     })))
 }
