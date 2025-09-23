@@ -42,7 +42,7 @@ class WebSocketManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
         logger.info(
-            f"WebSocket client disconnected. Total connections: {len(self.active_connections)}"
+            f"WebSocket client disconnected. Tota:wl connections: {len(self.active_connections)}"
         )
 
     async def broadcast(self, message: dict):

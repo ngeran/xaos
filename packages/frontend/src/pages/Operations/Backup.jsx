@@ -1,7 +1,6 @@
-
 /**
  * File Path: src/pages/Operations/Backup.jsx
- * Version: 3.6.7
+ * Version: 3.7.1
  *
  * Description:
  * Modern redesigned backup operations page with enhanced UI/UX and tab-based interface.
@@ -9,14 +8,15 @@
  * Uses WorkflowContainer for consistent layout with collapsible sidebar and a tabbed interface
  * for backup and restore operations, including configuration, execution, and results viewing.
  *
- * NEW: Fetches sidebar navigation items from API endpoint instead of hardcoded values.
- * UPDATE (v3.6.4): Removed <TabsList> component (tab navigation bar) from restore tab, retaining step indicator and <TabsContent> for Restore, Execute, Results. Navigation now relies on buttons and programmatic state changes.
- * UPDATE (v3.6.5): Updated backup API integration to use new endpoints: /api/backups/devices and /api/backups/device/:device_name. Fixed data mapping to match actual API response format.
- * UPDATE (v3.6.6): Fixed header alignment between sidebar and main content headers for better visual consistency.
- * UPDATE (v3.6.7): Refactored Backup workflow to use <Tabs> like Restore (select, execute, results). Added setCurrentBackupTab("execute") in handleBackup for proper transitions.
- * FIX: Resolved JSX boolean attribute error and API response mapping issues.
+ * NEW: Added WebSocket integration for real-time backup progress updates.
+ * UPDATE (v3.7.1): Fixed WebSocket connection to use Rust backend instead of Python runner
+ * and updated message handling for Rust WebSocket format.
+ *
+ * NOTE: This file includes mock implementations of WorkflowContainer, Tooltip, etc. Replace them
+ * with your real shared components if available.
  */
-import React, { useState, useEffect } from "react";
+
+import React, { useState, useEffect, useRef } from "react";
 import {
   Home,
   Server,
@@ -36,6 +36,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
+
 import DeviceTargetSelector from '@/shared/DeviceTargetSelector';
 import DeviceAuthFields from '@/shared/DeviceAuthFields';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -47,8 +48,9 @@ import toast from 'react-hot-toast';
 // SECTION 1: CONFIGURATION & CONSTANTS
 // =============================================================================
 const API_BASE_URL = "http://localhost:3010";
+const WS_URL = "ws://localhost:3010/ws"; // UPDATED: Connect to Rust backend WebSocket
 
-// Animation duration constants for consistent timing
+// Animation duration constants (if used in classNames)
 const ANIMATION_DURATION = {
   fast: 150,
   normal: 200,
@@ -70,22 +72,11 @@ const formatTimestamp = (timestamp) => {
 };
 
 // =============================================================================
-// SECTION 2: MOCK COMPONENTS - Temporary implementations for demonstration
+// SECTION 2: SMALL UI HELPERS (Tooltip, Container, etc.)
 // =============================================================================
-// NOTE: In production, these would be imported from their respective modules
 
-/**
- * Mock Tooltip Component
- * Provides hover tooltips for collapsed sidebar items
- * @param {Object} props - Component props
- * @param {React.ReactNode} props.children - Child elements
- * @param {string} props.content - Tooltip content
- * @param {string} props.side - Tooltip position (default: 'right')
- * @param {number} props.delayDuration - Delay before showing tooltip
- */
 const Tooltip = ({ children, content, side = "right", delayDuration = 0 }) => {
   const [isVisible, setIsVisible] = useState(false);
-
   return (
     <div className="relative inline-block">
       <div
@@ -114,33 +105,11 @@ const Tooltip = ({ children, content, side = "right", delayDuration = 0 }) => {
   );
 };
 
-/**
- * Mock TooltipProvider Component
- * Wraps tooltip components for consistent behavior
- * @param {Object} props - Component props
- * @param {React.ReactNode} props.children - Child elements
- * @param {number} props.delayDuration - Delay before showing tooltips
- */
-const TooltipProvider = ({ children, delayDuration = 150 }) => {
-  return <>{children}</>;
-};
+const TooltipProvider = ({ children }) => <>{children}</>;
 
 /**
- * Mock WorkflowContainer Component
- * Provides the main layout structure with sidebar and content area
- * In production: import { WorkflowContainer } from "@/shared/WorkflowContainer"
- * UPDATE (v3.2.0): Enhanced layout with better content area styling and header alignment
- * UPDATE (v3.6.1): Changed dark mode background to black (dark:bg-black)
- * UPDATE (v3.6.6): Fixed header alignment with consistent vertical centering
- * @param {Object} props - Component props
- * @param {React.ReactNode} props.sidebarContent - Sidebar content
- * @param {React.ReactNode} props.sidebarHeader - Sidebar header content
- * @param {React.ReactNode} props.mainContent - Main content area
- * @param {React.ReactNode} props.headerContent - Header content
- * @param {Function} props.onSidebarToggle - Callback for sidebar toggle
- * @param {string} props.className - Additional CSS classes
- * @param {boolean} props.isCollapsed - Sidebar collapsed state
- * @param {Function} props.onHeaderToggle - Callback for header toggle
+ * WorkflowContainer (mock)
+ * Replace with your real WorkflowContainer if available.
  */
 const WorkflowContainer = ({
   sidebarContent,
@@ -155,27 +124,21 @@ const WorkflowContainer = ({
   return (
     <TooltipProvider>
       <div className={`flex h-screen bg-background text-foreground dark:bg-black ${className}`}>
-        {/* Sidebar - UPDATED (v3.2.0): Removed individual rounded corners */}
         <div className={`${isCollapsed ? 'w-16' : 'w-72'} border-r border-border dark:border-gray-700 bg-card dark:bg-black transition-all duration-300 flex flex-col overflow-hidden`}>
-          {/* Sidebar Header - UPDATED (v3.6.6): Fixed height and alignment for consistency */}
           <div className="h-16 border-b border-border dark:border-gray-700 flex items-center">
             {sidebarHeader}
           </div>
-          {/* Sidebar Content */}
           <div className="flex-1 overflow-y-auto">
             {React.cloneElement(sidebarContent, { isCollapsed })}
           </div>
         </div>
 
-        {/* Main Content Area - UPDATED (v3.2.0): Removed rounded corners from container */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header - UPDATED (v3.6.6): Fixed height matching sidebar header with consistent alignment */}
           {headerContent && (
             <header className="h-16 border-b border-border dark:border-gray-700 bg-background dark:bg-black px-6 flex items-center">
               {React.cloneElement(headerContent, { isCollapsed, onHeaderToggle })}
             </header>
           )}
-          {/* Main content area - UPDATED (v3.2.0): Added wrapper with padding and rounded inner container */}
           <div className="flex-1 overflow-hidden p-4">
             <div className="h-full overflow-y-auto bg-card dark:bg-black rounded-2xl border border-border/50 dark:border-gray-700/50">
               {mainContent}
@@ -188,16 +151,7 @@ const WorkflowContainer = ({
 };
 
 /**
- * Mock NavigationItem Component
- * Renders sidebar navigation items with icons and labels
- * In production: import { NavigationItem } from "@/shared/NavigationItem"
- * @param {Object} props - Component props
- * @param {React.Component} props.icon - Icon component
- * @param {string} props.label - Navigation item label
- * @param {string} props.description - Navigation item description
- * @param {boolean} props.isActive - Active state
- * @param {Function} props.onClick - Click handler
- * @param {boolean} props.isCollapsed - Sidebar collapsed state
+ * NavigationItem (mock)
  */
 const NavigationItem = ({ icon: Icon, label, description, isActive, onClick, isCollapsed }) => {
   const content = (
@@ -223,222 +177,191 @@ const NavigationItem = ({ icon: Icon, label, description, isActive, onClick, isC
     </button>
   );
 
-  // Wrap with tooltip when collapsed
   if (isCollapsed) {
-    return (
-      <Tooltip content={label} side="right">
-        {content}
-      </Tooltip>
-    );
+    return <Tooltip content={label} side="right">{content}</Tooltip>;
   }
-
   return content;
 };
 
 // =============================================================================
-// SECTION 3: RESTORE FORM COMPONENT
+// SECTION 3: RESTORE FORM & Dropdown Helpers (used by Restore tab)
 // =============================================================================
-/**
- * RestoreForm Component
- * Enhanced form for selecting host devices and backup files for restoration
- * Adapted from RestoreForm.jsx with light/dark mode compatibility
- * UPDATE (v3.6.1): Changed dark mode background to black (dark:bg-black)
- * @param {Object} props - Component props
- * @param {Object} props.parameters - Form parameters (hostname, backup_file, username, password)
- * @param {Function} props.onParamChange - Handler for parameter changes
- * @param {Array} props.hosts - List of host devices
- * @param {Array} props.backups - List of backup files
- * @param {boolean} props.loadingHosts - Loading state for hosts
- * @param {boolean} props.loadingBackups - Loading state for backups
- * @param {string|null} props.error - Error message for API fetches
- */
+
+const ModernDropdown = ({
+  label,
+  value,
+  onChange,
+  options = [],
+  placeholder,
+  disabled = false,
+  loading = false,
+  icon
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+
+  const filteredOptions = options.filter(option =>
+    option.label.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const selectedOption = options.find(opt => opt.value === value);
+
+  const handleSelect = (optionValue) => {
+    onChange(optionValue);
+    setIsOpen(false);
+    setSearchTerm('');
+    setFocusedIndex(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!isOpen) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setIsOpen(true);
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case 'Escape':
+        setIsOpen(false);
+        setFocusedIndex(-1);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        setFocusedIndex(prev =>
+          prev < filteredOptions.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setFocusedIndex(prev =>
+          prev > 0 ? prev - 1 : filteredOptions.length - 1
+        );
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (focusedIndex >= 0 && filteredOptions[focusedIndex]) {
+          handleSelect(filteredOptions[focusedIndex].value);
+        }
+        break;
+    }
+  };
+
+  return (
+    <div className="relative group">
+      <label className="block text-sm font-bold text-gray-800 dark:text-gray-100 mb-3 tracking-wide uppercase">
+        {label}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => !disabled && !loading && setIsOpen(!isOpen)}
+          onKeyDown={handleKeyDown}
+          disabled={disabled || loading}
+          className={`
+            w-full px-6 py-4 text-left bg-white/70 dark:bg-black/70 backdrop-blur-sm border-2 rounded-2xl
+            shadow-lg transition-all duration-${ANIMATION_DURATION.normal} group-hover:shadow-xl
+            ${disabled || loading
+              ? 'border-gray-300 dark:border-gray-600 bg-gray-50/70 dark:bg-black/70 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+              : 'border-gray-300 dark:border-gray-600 hover:border-gray-900 dark:hover:border-gray-100 focus:ring-4 focus:ring-gray-900/20 dark:focus:ring-gray-100/20 focus:border-gray-900 dark:focus:border-gray-100'
+            }
+            ${isOpen ? 'ring-4 ring-gray-900/20 dark:ring-gray-100/20 border-gray-900 dark:border-gray-100 shadow-xl' : ''}
+          `}
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
+          aria-label={label}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              {icon && (
+                <div className="text-gray-900 dark:text-gray-100 opacity-80">
+                  {React.cloneElement(icon, { className: "w-5 h-5" })}
+                </div>
+              )}
+              <span className={`font-medium ${selectedOption ? 'text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}>
+                {loading ? (
+                  <div className="flex items-center space-x-3">
+                    <PulseLoader size={6} color="#111827" className="dark:text-gray-100" />
+                    <span className="text-sm">Loading options...</span>
+                  </div>
+                ) : (
+                  selectedOption?.label || placeholder
+                )}
+              </span>
+            </div>
+            {!loading && (
+              <svg
+                className={`w-5 h-5 text-gray-900 dark:text-gray-100 transition-transform duration-${ANIMATION_DURATION.normal} ${
+                  isOpen ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            )}
+          </div>
+        </button>
+        {isOpen && (
+          <div className="absolute z-10 w-full mt-2 bg-white/90 dark:bg-black/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl max-h-64 overflow-y-auto custom-scrollbar">
+            <div className="p-2">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search..."
+                className="w-full px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white/50 dark:bg-black/50 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:focus:ring-gray-100/20"
+              />
+            </div>
+            {filteredOptions.length === 0 && !loading ? (
+              <div className="p-4 text-sm text-gray-600 dark:text-gray-400 text-center">
+                No options available
+              </div>
+            ) : (
+              filteredOptions.map((option, index) => (
+                <button
+                  key={option.value}
+                  onClick={() => handleSelect(option.value)}
+                  className={`
+                    w-full px-4 py-2 text-left text-sm transition-colors duration-${ANIMATION_DURATION.fast}
+                    ${index === focusedIndex
+                      ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-black/50'
+                    }
+                  `}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium">{option.label}</span>
+                    {option.description && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">{option.description}</span>
+                    )}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, loadingBackups, error }) => {
-  // Icon Components for Dropdowns
+  // Inline icons
   const HostIcon = (
-    <svg fill="currentColor" viewBox="0 0 24 24" stroke="none">
-      <path d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zM3 16a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"/>
-    </svg>
+    <svg fill="currentColor" viewBox="0 0 24 24" stroke="none"><path d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zM3 16a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"/></svg>
   );
 
   const BackupIcon = (
-    <svg fill="currentColor" viewBox="0 0 24 24" stroke="none">
-      <path d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V4a2 2 0 00-2-2H4zm0 2h16v12H4V4zm2 2v8h12V6H6zm2 2h8v4H8V8z"/>
-    </svg>
+    <svg fill="currentColor" viewBox="0 0 24 24" stroke="none"><path d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V4a2 2 0 00-2-2H4zm0 2h16v12H4V4zm2 2v8h12V6H6zm2 2h8v4H8V8z"/></svg>
   );
-
-  const RestoreIcon = (
-    <svg fill="currentColor" viewBox="0 0 24 24" stroke="none">
-      <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0L8 8m4-4v12"/>
-    </svg>
-  );
-
-  // Modern Dropdown Component for Host and Backup Selection
-  const ModernDropdown = ({
-    label,
-    value,
-    onChange,
-    options = [],
-    placeholder,
-    disabled = false,
-    loading = false,
-    icon
-  }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [focusedIndex, setFocusedIndex] = useState(-1);
-
-    const filteredOptions = options.filter(option =>
-      option.label.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    const selectedOption = options.find(opt => opt.value === value);
-
-    const handleSelect = (optionValue) => {
-      onChange(optionValue);
-      setIsOpen(false);
-      setSearchTerm('');
-      setFocusedIndex(-1);
-    };
-
-    const handleKeyDown = (e) => {
-      if (!isOpen) {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          setIsOpen(true);
-        }
-        return;
-      }
-
-      switch (e.key) {
-        case 'Escape':
-          setIsOpen(false);
-          setFocusedIndex(-1);
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          setFocusedIndex(prev =>
-            prev < filteredOptions.length - 1 ? prev + 1 : 0
-          );
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          setFocusedIndex(prev =>
-            prev > 0 ? prev - 1 : filteredOptions.length - 1
-          );
-          break;
-        case 'Enter':
-          e.preventDefault();
-          if (focusedIndex >= 0 && filteredOptions[focusedIndex]) {
-            handleSelect(filteredOptions[focusedIndex].value);
-          }
-          break;
-      }
-    };
-
-    return (
-      <div className="relative group">
-        <label className="block text-sm font-bold text-gray-800 dark:text-gray-100 mb-3 tracking-wide uppercase">
-          {label}
-        </label>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => !disabled && !loading && setIsOpen(!isOpen)}
-            onKeyDown={handleKeyDown}
-            disabled={disabled || loading}
-            className={`
-              w-full px-6 py-4 text-left bg-white/70 dark:bg-black/70 backdrop-blur-sm border-2 rounded-2xl
-              shadow-lg transition-all duration-${ANIMATION_DURATION.normal} group-hover:shadow-xl
-              ${disabled || loading
-                ? 'border-gray-300 dark:border-gray-600 bg-gray-50/70 dark:bg-black/70 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                : 'border-gray-300 dark:border-gray-600 hover:border-gray-900 dark:hover:border-gray-100 focus:ring-4 focus:ring-gray-900/20 dark:focus:ring-gray-100/20 focus:border-gray-900 dark:focus:border-gray-100'
-              }
-              ${isOpen ? 'ring-4 ring-gray-900/20 dark:ring-gray-100/20 border-gray-900 dark:border-gray-100 shadow-xl' : ''}
-            `}
-            aria-expanded={isOpen}
-            aria-haspopup="listbox"
-            aria-label={label}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                {icon && (
-                  <div className="text-gray-900 dark:text-gray-100 opacity-80">
-                    {React.cloneElement(icon, { className: "w-5 h-5" })}
-                  </div>
-                )}
-                <span className={`font-medium ${selectedOption ? 'text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}>
-                  {loading ? (
-                    <div className="flex items-center space-x-3">
-                      <PulseLoader size={6} color="#111827" className="dark:text-gray-100" />
-                      <span className="text-sm">Loading options...</span>
-                    </div>
-                  ) : (
-                    selectedOption?.label || placeholder
-                  )}
-                </span>
-              </div>
-              {!loading && (
-                <svg
-                  className={`w-5 h-5 text-gray-900 dark:text-gray-100 transition-transform duration-${ANIMATION_DURATION.normal} ${
-                    isOpen ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              )}
-            </div>
-          </button>
-          {isOpen && (
-            <div className="absolute z-10 w-full mt-2 bg-white/90 dark:bg-black/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl max-h-64 overflow-y-auto custom-scrollbar">
-              <div className="p-2">
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search..."
-                  className="w-full px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white/50 dark:bg-black/50 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:focus:ring-gray-100/20"
-                />
-              </div>
-              {filteredOptions.length === 0 && !loading ? (
-                <div className="p-4 text-sm text-gray-600 dark:text-gray-400 text-center">
-                  No options available
-                </div>
-              ) : (
-                filteredOptions.map((option, index) => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleSelect(option.value)}
-                    className={`
-                      w-full px-4 py-2 text-left text-sm transition-colors duration-${ANIMATION_DURATION.fast}
-                      ${index === focusedIndex
-                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-black/50'
-                      }
-                    `}
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-medium">{option.label}</span>
-                      {option.description && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{option.description}</span>
-                      )}
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="min-h-fit bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-black dark:via-black dark:to-black p-4">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Error Display */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/30 border-2 border-red-200 dark:border-red-700 rounded-2xl p-6 mb-6">
             <div className="flex items-center space-x-3">
@@ -450,16 +373,14 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
           </div>
         )}
 
-        {/* Authentication Section */}
         <div className="bg-white/80 dark:bg-black/80 backdrop-blur-sm rounded-3xl p-6 shadow-2xl border border-gray-200/50 dark:border-gray-700/50">
           <DeviceAuthFields parameters={parameters} onParamChange={onParamChange} />
         </div>
 
-        {/* Main Form Section */}
         <div className="bg-white/80 dark:bg-black/80 backdrop-blur-sm rounded-3xl p-6 shadow-2xl border border-gray-200/50 dark:border-gray-700/50">
           <div className="flex items-center space-x-4 mb-6">
             <div className="p-2 bg-gradient-to-br from-gray-900 to-gray-700 dark:from-gray-100 dark:to-gray-300 rounded-xl">
-              {React.cloneElement(RestoreIcon, { className: "w-5 h-5 text-white dark:text-gray-900" })}
+              {React.cloneElement(BackupIcon, { className: "w-5 h-5 text-white dark:text-gray-900" })}
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Select Backup Source</h2>
@@ -467,9 +388,7 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
             </div>
           </div>
 
-          {/* Form fields in responsive grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Host Selection Dropdown */}
             <ModernDropdown
               label="Host Device"
               value={parameters.hostname || ""}
@@ -480,7 +399,6 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
               icon={HostIcon}
             />
 
-            {/* Backup File Selection Dropdown */}
             <ModernDropdown
               label="Backup File"
               value={parameters.backup_file || ""}
@@ -498,74 +416,20 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
               icon={BackupIcon}
             />
           </div>
-
-          {/* Progress indicator */}
-          <div className="mt-6 flex items-center justify-center space-x-4">
-            <div className={`w-2 h-2 rounded-full transition-all duration-300 ${parameters.hostname ? 'bg-gray-900 dark:bg-gray-100' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-            <div className="w-6 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
-            <div className={`w-2 h-2 rounded-full transition-all duration-300 ${parameters.backup_file ? 'bg-gray-900 dark:bg-gray-100' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-            <div className="w-6 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
-            <div className={`w-2 h-2 rounded-full transition-all duration-300 ${parameters.hostname && parameters.backup_file ? 'bg-gray-900 dark:bg-gray-100' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-          </div>
         </div>
-
-        {/* Custom scrollbar styles - FIXED: Removed jsx attribute */}
-        <style>{`
-          .custom-scrollbar::-webkit-scrollbar {
-            width: 6px;
-          }
-          .custom-scrollbar::-webkit-scrollbar-track {
-            background: #f1f5f9;
-            border-radius: 10px;
-          }
-          .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-          }
-          .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-          }
-          .dark .custom-scrollbar::-webkit-scrollbar-track {
-            background: #000000;
-          }
-          .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #4b5563;
-          }
-          .dark .custom-scrollbar-thumb:hover {
-            background: 6b7280;
-          }
-        `}</style>
       </div>
     </div>
   );
 };
 
 // =============================================================================
-// SECTION 4: MAIN BACKUP COMPONENT - Primary page component
+// SECTION 4: MAIN BACKUP COMPONENT - ModernBackup
 // =============================================================================
-/**
- * Modern Backup Page Component
- * Orchestrates the backup and restore interfaces with a sidebar and tabbed content
- * UPDATE (v3.3.0): Fixed form submission issues throughout
- * UPDATE (v3.4.0): Added keyboard event debugging and isolation
- * UPDATE (v3.4.1): Integrated DeviceTargetSelector and DeviceAuthFields for consistency with Restore.jsx
- * UPDATE (v3.4.2): Ensured DeviceTargetSelector and DeviceAuthFields prevent page refreshes on input
- * UPDATE (v3.5.0): Replaced MultiTabInterface with step-based navigation to fix input issues
- * UPDATE (v3.6.0): Added tab-based navigation for Restore Device with Restore, Execute, Results tabs
- * UPDATE (v3.6.1): Fixed dark mode background to black (dark:bg-black); corrected duplicate sidebar entries
- * UPDATE (v3.6.2): Removed fallback sidebar items in fetchSidebarItems
- * UPDATE (v3.6.3): Removed "Device Configuration Restore Tool" title; fixed duplicate tab panels in restore
- * UPDATE (v3.6.4): Removed <TabsList> from restore tab, keeping step indicator and programmatic navigation
- * UPDATE (v3.6.5): Updated backup API integration to use new endpoints and data mapping
- * UPDATE (v3.6.6): Fixed header alignment between sidebar and main content
- * UPDATE (v3.6.7): Refactored Backup workflow to use <Tabs> like Restore (select, execute, results). Added setCurrentBackupTab(\"execute\") in handleBackup for proper transitions.
- * FIX: Resolved JSX boolean attribute error and API response mapping issues
- */
 function ModernBackup() {
   // --- State Management ---
   const [activeTab, setActiveTab] = useState("backup");
-  const [currentTab, setCurrentTab] = useState("restore");
-  const [currentBackupTab, setCurrentBackupTab] = useState("select"); // UPDATE (v3.6.7): Added for backup
+  const [currentBackupTab, setCurrentBackupTab] = useState("select");
+  const [currentTab, setCurrentTab] = useState("restore"); // for restore workflow
   const [parameters, setParameters] = useState({
     hostname: '',
     inventory_file: '',
@@ -573,110 +437,118 @@ function ModernBackup() {
     password: '',
     backup_file: ''
   });
+
   const [sidebarItems, setSidebarItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Execution / progress states
   const [progress, setProgress] = useState(0);
   const [backupStatus, setBackupStatus] = useState(null);
   const [restoreStatus, setRestoreStatus] = useState(null);
+
+  // Restore form states
   const [hosts, setHosts] = useState([]);
   const [backups, setBackups] = useState([]);
   const [loadingHosts, setLoadingHosts] = useState(true);
   const [loadingBackups, setLoadingBackups] = useState(false);
   const [errorRestore, setErrorRestore] = useState(null);
 
-  // --- Event Handlers ---
-  /**
-   * Handles parameter changes for backup and restore forms
-   * @param {string} name - Parameter name
-   * @param {string} value - Parameter value
-   */
+  // Real-time logs & job tracking
+  const [logs, setLogs] = useState([]);
+  const [jobId, setJobId] = useState(null);
+  const jobIdRef = useRef(null); // keep a ref for websocket closure safety
+
+  // --- helpers ---
+  useEffect(() => { jobIdRef.current = jobId; }, [jobId]);
+
+  // -----------------------
+  // Event Handlers
+  // -----------------------
   const handleParamChange = (name, value) => {
-    console.log(`Param update: ${name}: ${value}`); // Debug log
     setParameters(prev => ({ ...prev, [name]: value }));
   };
 
-  /**
-   * Toggles sidebar collapsed state
-   * @param {boolean} collapsed - New collapsed state
-   */
   const handleSidebarToggle = (collapsed) => {
     setSidebarCollapsed(collapsed);
   };
 
-  /**
-   * Toggles sidebar via header button
-   */
   const handleHeaderToggle = () => {
     setSidebarCollapsed(!sidebarCollapsed);
   };
 
-  /**
-   * Initiates the backup process
-   * Transitions to Execute step and performs API call
-   * UPDATE (v3.6.7): Added setCurrentBackupTab("execute") to show progress panel
-   */
+  // =============================================================================
+  // SECTION 4.1: handleBackup with Job ID tracking (uses REST to trigger, WS for progress)
+  // =============================================================================
   const handleBackup = async (event) => {
     event.preventDefault();
 
     // Basic validation
     if (!parameters.hostname && !parameters.inventory_file) {
-        toast.error('Please specify a hostname or an inventory file.');
-        return;
+      toast.error('Please specify a hostname or an inventory file.');
+      return;
     }
 
-    // Switch to execute tab immediately
+    // move to execute tab immediately, clear previous state
     setCurrentBackupTab("execute");
-
-    // Set UI state to show loading
     setBackupStatus(null);
     setProgress(0);
+    setLogs([]);
+    setJobId(null);
+    jobIdRef.current = null;
     toast.loading('Starting backup...', { id: 'backup-toast' });
 
     const payload = {
-        hostname: parameters.hostname || undefined,
-        inventory_file: parameters.inventory_file || undefined,
-        username: parameters.username,
-        password: parameters.password
+      hostname: parameters.hostname || undefined,
+      inventory_file: parameters.inventory_file || undefined,
+      username: parameters.username,
+      password: parameters.password
     };
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/backups/devices`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload)
-        });
+      // Trigger backup on backend. Backend will broadcast a 'started' event with job_id via WebSocket.
+      const response = await fetch(`${API_BASE_URL}/api/backups/devices`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
 
-        const data = await response.json();
+      // backend may return final result after completion; we still rely on WS for real-time updates.
+      const data = await response.json();
 
-        if (!response.ok) {
-            throw new Error(data.message || `HTTP error! Status: ${response.status}`);
-        }
+      // If API returns immediate job metadata (some setups do), capture it.
+      if (data.job_id) {
+        setJobId(data.job_id);
+        jobIdRef.current = data.job_id;
+      }
 
-        // Success handling
-        console.log("Backup API response:", data);
+      // if response is successful but backend used WS for events, results will arrive via WS handler
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP error! Status: ${response.status}`);
+      }
+
+      // If backend returns a final result synchronously (rare in streaming scenarios),
+      // we set success when it's completed and no WS will be incoming
+      // (the WS handler will also handle completed/failed events if they're broadcast).
+      if (data.status === 'completed' || data.status === 'success') {
         setBackupStatus('success');
         setProgress(100);
         setCurrentBackupTab("results");
         toast.success('Backup completed successfully!', { id: 'backup-toast' });
-
+      }
     } catch (error) {
-        // Error handling
-        console.error("Backup failed:", error);
-        setBackupStatus('error');
-        setProgress(0);
-        setCurrentBackupTab("results");
-        toast.error(`Backup failed: ${error.message}`, { id: 'backup-toast' });
+      console.error("Backup failed:", error);
+      setBackupStatus('error');
+      setProgress(0);
+      setCurrentBackupTab("results");
+      toast.error(`Backup failed: ${error.message}`, { id: 'backup-toast' });
     }
   };
 
-  /**
-   * Initiates the restore process
-   * Transitions to Execute tab and simulates restore progress
-   */
+  // Restore handler (keeps simulated behavior)
   const handleRestore = () => {
     setCurrentTab('execute');
     setProgress(0);
@@ -693,16 +565,16 @@ function ModernBackup() {
     }, 300);
   };
 
-  /**
-   * Resets the backup or restore form to initial state
-   * Clears inputs and returns to initial step/tab
-   */
+  // Reset both workflows
   const handleReset = () => {
     if (activeTab === 'backup') {
       setParameters({ hostname: '', inventory_file: '', username: '', password: '', backup_file: '' });
       setBackupStatus(null);
       setProgress(0);
       setCurrentBackupTab("select");
+      setLogs([]);
+      setJobId(null);
+      jobIdRef.current = null;
     } else if (activeTab === 'restore') {
       setCurrentTab('restore');
       setRestoreStatus(null);
@@ -711,7 +583,7 @@ function ModernBackup() {
     }
   };
 
-  // --- Validation Logic ---
+  // Validation helpers
   const isBackupValid = (
     parameters.hostname?.trim().length > 0 ||
     parameters.inventory_file?.trim().length > 0
@@ -724,32 +596,24 @@ function ModernBackup() {
     parameters.password?.trim().length > 0
   );
 
-  // --- API Integration ---
-  /**
-   * Fetches sidebar navigation items from API
-   * UPDATE (v3.6.1): Removed mock data concatenation to prevent duplicate entries
-   * UPDATE (v3.6.2): Removed fallback sidebar items, relying solely on API response
-   */
+  // =============================================================================
+  // SECTION 5: API INTEGRATION (sidebar/devices/backups)
+  // =============================================================================
   useEffect(() => {
     const fetchSidebarItems = async () => {
       try {
         setLoading(true);
         const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
         const url = '/api/sidebar/backup';
-        console.log('Fetching sidebar items from:', url);
-        console.log('VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
-
         let response = await fetch(url);
 
         if (response.headers.get('content-type')?.includes('text/html')) {
-          console.warn('Proxy failed, falling back to absolute URL:', `${apiBaseUrl}/api/sidebar/backup`);
           response = await fetch(`${apiBaseUrl}/api/sidebar/backup`);
         }
 
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           const text = await response.text();
-          console.error('Received non-JSON response:', text.substring(0, 200));
           throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
         }
 
@@ -758,7 +622,6 @@ function ModernBackup() {
         }
 
         const data = await response.json();
-        console.log('Sidebar items fetched successfully:', data);
         setSidebarItems(data || []);
         setError(null);
       } catch (err) {
@@ -773,9 +636,6 @@ function ModernBackup() {
     fetchSidebarItems();
   }, []);
 
-  /**
-   * Fetches host devices for restore form - FIXED: Added proper error handling for API response format
-   */
   useEffect(() => {
     if (activeTab !== 'restore') return;
     const fetchHosts = async () => {
@@ -783,42 +643,30 @@ function ModernBackup() {
       setErrorRestore(null);
       try {
         const response = await fetch(`${API_BASE_URL}/api/backups/devices`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        
-        console.log('Hosts API response:', data); // Debug log
-        
-        // Handle different API response formats
         let hostOptions = [];
-        
+
         if (data.devices && Array.isArray(data.devices)) {
-          // Format 1: { devices: [{ name: "device1", backup_count: 5 }, ...] }
           hostOptions = data.devices.map(device => ({
             value: device.name,
             label: device.name,
             description: `Backups: ${device.backup_count || 0}`
           }));
         } else if (data.devices && typeof data.devices === 'object') {
-          // Format 2: { devices: { "device1": ["file1", "file2"], ... } }
           hostOptions = Object.keys(data.devices).map(deviceName => ({
             value: deviceName,
             label: deviceName,
             description: `Backups: ${data.devices[deviceName]?.length || 0}`
           }));
         } else if (data.status === 'success' && data.devices) {
-          // Format 3: { status: "success", devices: { ... } }
           hostOptions = Object.keys(data.devices).map(deviceName => ({
             value: deviceName,
             label: deviceName,
             description: `Backups: ${data.devices[deviceName]?.length || 0}`
           }));
         } else {
-          // Fallback: Try to extract device names from the response
-          const deviceNames = Object.keys(data).filter(key => 
-            key !== 'status' && key !== 'error' && key !== 'path'
-          );
+          const deviceNames = Object.keys(data).filter(key => key !== 'status' && key !== 'error' && key !== 'path');
           if (deviceNames.length > 0) {
             hostOptions = deviceNames.map(deviceName => ({
               value: deviceName,
@@ -827,13 +675,12 @@ function ModernBackup() {
             }));
           }
         }
-        
+
         setHosts(hostOptions);
-        
       } catch (error) {
         console.error('Error fetching hosts:', error);
         setErrorRestore('Failed to load host devices');
-        setHosts([]); // Ensure hosts is always an array
+        setHosts([]);
         toast.error("Unable to fetch host devices. Please check your connection.");
       } finally {
         setLoadingHosts(false);
@@ -842,9 +689,6 @@ function ModernBackup() {
     fetchHosts();
   }, [activeTab]);
 
-  /**
-   * Fetches backup files when a host is selected - FIXED: Added proper error handling for API response format
-   */
   useEffect(() => {
     if (activeTab !== 'restore') return;
     const fetchBackups = async () => {
@@ -858,38 +702,29 @@ function ModernBackup() {
       setErrorRestore(null);
       try {
         const response = await fetch(`${API_BASE_URL}/api/backups/device/${selectedHost}`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        
-        console.log('Backups API response:', data); // Debug log
-        
         let backupOptions = [];
-        
+
         if (data.backups && Array.isArray(data.backups)) {
-          // Format 1: { backups: [{ name: "file1", size: 1234, modified: 1234567890 }, ...] }
           backupOptions = data.backups.map(backup => ({
             value: backup.name,
             label: backup.name,
             description: `Size: ${formatFileSize(backup.size)} • Modified: ${formatTimestamp(backup.modified)}`
           }));
         } else if (Array.isArray(data)) {
-          // Format 2: Direct array of backup file names
           backupOptions = data.map(backupFile => ({
             value: backupFile,
             label: backupFile,
             description: 'Backup file'
           }));
         } else if (data.devices && data.devices[selectedHost]) {
-          // Format 3: From the devices endpoint structure
           backupOptions = data.devices[selectedHost].map(backupFile => ({
             value: backupFile,
             label: backupFile,
             description: 'Backup file'
           }));
         } else if (typeof data === 'object') {
-          // Format 4: Try to find backup files in the response object
           const backupFiles = Object.values(data).find(value => Array.isArray(value));
           if (backupFiles) {
             backupOptions = backupFiles.map(backupFile => ({
@@ -899,9 +734,8 @@ function ModernBackup() {
             }));
           }
         }
-        
+
         setBackups(backupOptions);
-        
       } catch (error) {
         console.error('Error fetching backups:', error);
         setErrorRestore('Failed to load backup files');
@@ -914,31 +748,20 @@ function ModernBackup() {
     fetchBackups();
   }, [activeTab, parameters.hostname]);
 
-  /**
-   * Debug logging for parameter changes
-   */
+  // Debug param logging
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       console.log("Backup parameters updated:", parameters);
     }
   }, [parameters]);
 
-  // --- Global Keyboard Event Debugging ---
-  /**
-   * Prevents unintended form submissions and logs keypresses for debugging
-   */
+  // Keyboard debug
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       if (e.key.toLowerCase() === 'a' && document.activeElement.tagName === 'INPUT') {
         console.log('[DEBUG] A key pressed in input:', {
-          key: e.key,
-          ctrlKey: e.ctrlKey,
-          altKey: e.altKey,
-          metaKey: e.metaKey,
-          shiftKey: e.shiftKey,
-          target: e.target,
-          targetName: e.target.name,
-          defaultPrevented: e.defaultPrevented
+          key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey, shiftKey: e.shiftKey,
+          target: e.target, targetName: e.target.name, defaultPrevented: e.defaultPrevented
         });
       }
 
@@ -956,7 +779,110 @@ function ModernBackup() {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
   }, []);
 
-  // --- Icon Mapping ---
+  // =============================================================================
+  // SECTION 6: WebSocket listener for real-time updates
+  // - Connects once on mount
+  // - Filters events by jobIdRef.current when available
+  // - Updated for Rust backend WebSocket format
+  // =============================================================================
+  useEffect(() => {
+    const ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      console.log("✅ WebSocket connected to Rust backend:", WS_URL);
+      // Subscribe to job events
+      try { 
+        ws.send(JSON.stringify({ 
+          type: 'Subscribe',
+          payload: { topics: ['job_events'] }
+        })); 
+      } catch (e) {
+        console.error("Failed to send subscription:", e);
+      }
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        console.log("WebSocket message received:", data); // Debug log
+        
+        // Handle different message types from Rust backend
+        if (data.type === 'ACTIVE_CONNECTIONS') {
+          // Connection stats - ignore for now
+          return;
+        }
+        
+        if (data.type === 'Ping') {
+          // Respond to ping with pong
+          try { 
+            ws.send(JSON.stringify({ type: 'Pong' })); 
+          } catch (e) {
+            console.error("Failed to send pong:", e);
+          }
+          return;
+        }
+        
+        // Handle job progress messages (these will come from Rust when Python sends them)
+        if (data.type === 'job_progress' || data.event_type) {
+          const incomingJobId = data.job_id;
+
+          // If we don't yet have a jobId and receive a 'started' event, accept and track it
+          if (!jobIdRef.current && data.event_type === 'started') {
+            setJobId(incomingJobId);
+            jobIdRef.current = incomingJobId;
+          }
+
+          // If we have a jobId and this message is for another job, ignore it
+          if (jobIdRef.current && incomingJobId !== jobIdRef.current) {
+            return;
+          }
+
+          // Process event types
+          if (data.event_type === 'progress') {
+            const message = data.data?.message || JSON.stringify(data.data || {});
+            setLogs(prev => [...prev, message]);
+            if (typeof data.data?.progress === 'number') {
+              setProgress(data.data.progress);
+            }
+          } else if (data.event_type === 'completed') {
+            setLogs(prev => [...prev, JSON.stringify(data.data || {})]);
+            setProgress(100);
+            setBackupStatus('success');
+            setCurrentBackupTab('results');
+            toast.success('Backup completed successfully');
+          } else if (data.event_type === 'failed') {
+            setLogs(prev => [...prev, `ERROR: ${data.error || 'Unknown error'}`]);
+            setBackupStatus('error');
+            setCurrentBackupTab('results');
+            toast.error(`Backup failed: ${data.error || 'Unknown error'}`);
+          } else if (data.event_type === 'started') {
+            setLogs(prev => [...prev, `Started: ${JSON.stringify(data.data || {})}`]);
+          } else {
+            // generic log
+            setLogs(prev => [...prev, JSON.stringify(data)]);
+          }
+        }
+      } catch (err) {
+        console.error("Invalid WS message:", evt.data, err);
+      }
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket closed");
+    };
+
+    return () => {
+      try { ws.close(); } catch (e) {}
+    };
+  }, []); // run once on mount
+
+  // =============================================================================
+  // SECTION 7: Sidebar / Header components (mock)
+  // =============================================================================
   const iconMap = {
     Download,
     Upload,
@@ -975,16 +901,6 @@ function ModernBackup() {
     Home
   };
 
-  // =============================================================================
-  // SECTION 4.1: SIDEBAR CONTENT COMPONENT
-  // =============================================================================
-  /**
-   * Renders sidebar navigation items with loading and error states
-   * @param {Object} props - Component props
-   * @param {string} props.activeTab - Current active tab
-   * @param {Function} props.setActiveTab - Sets active tab
-   * @param {boolean} props.isCollapsed - Sidebar collapsed state
-   */
   const SidebarContent = ({ activeTab, setActiveTab, isCollapsed }) => {
     if (loading) {
       return (
@@ -1052,16 +968,6 @@ function ModernBackup() {
     );
   };
 
-  // =============================================================================
-  // SECTION 4.2: HEADER CONTENT COMPONENT
-  // =============================================================================
-  /**
-   * Renders header with toggle button and title
-   * UPDATE (v3.6.6): Fixed vertical alignment to match sidebar header
-   * @param {Object} props - Component props
-   * @param {boolean} props.isCollapsed - Sidebar collapsed state
-   * @param {Function} props.onHeaderToggle - Toggle handler
-   */
   const HeaderContent = ({ isCollapsed, onHeaderToggle }) => (
     <div className="flex items-center w-full">
       <div className="flex items-center gap-4">
@@ -1086,15 +992,6 @@ function ModernBackup() {
     </div>
   );
 
-  // =============================================================================
-  // SECTION 4.3: SIDEBAR HEADER COMPONENT
-  // =============================================================================
-  /**
-   * Renders sidebar header with consistent vertical alignment
-   * UPDATE (v3.6.6): Ensured proper vertical centering to match main header
-   * @param {Object} props - Component props
-   * @param {boolean} props.isCollapsed - Sidebar collapsed state
-   */
   const SidebarHeader = ({ isCollapsed }) => (
     <div className={`flex items-center h-full px-4 transition-all duration-300 ${
       isCollapsed ? 'justify-center' : ''
@@ -1114,18 +1011,15 @@ function ModernBackup() {
   );
 
   // =============================================================================
-  // SECTION 4.4: MAIN CONTENT RENDER
+  // SECTION 8: MAIN RENDER
   // =============================================================================
-  /**
-   * Renders main content based on activeTab
-   * @returns {React.ReactNode} Content for backup or restore
-   */
   const renderMainContent = () => {
     if (activeTab === 'backup') {
       return (
         <div className="w-full max-w-4xl mx-auto">
           <div className="mb-6 px-6">
           </div>
+
           <div className="mb-6 px-6">
             <div className="flex items-center space-x-4">
               {[1, 2, 3].map((step) => (
@@ -1161,21 +1055,16 @@ function ModernBackup() {
           </div>
 
           <Tabs value={currentBackupTab} className="w-full">
+            {/* Select */}
             <TabsContent value="select" className="mt-6">
               <div className="border rounded-lg overflow-hidden bg-card dark:bg-black p-6 space-y-6">
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Device Selection</h3>
-                  <DeviceTargetSelector 
-                    parameters={parameters}
-                    onParamChange={handleParamChange}
-                  />
+                  <DeviceTargetSelector parameters={parameters} onParamChange={handleParamChange} />
                 </div>
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Authentication</h3>
-                  <DeviceAuthFields 
-                    parameters={parameters}
-                    onParamChange={handleParamChange}
-                  />
+                  <DeviceAuthFields parameters={parameters} onParamChange={handleParamChange} />
                 </div>
                 <div className="flex justify-end pt-4">
                   <Button
@@ -1189,6 +1078,7 @@ function ModernBackup() {
               </div>
             </TabsContent>
 
+            {/* Execute */}
             <TabsContent value="execute" className="mt-6">
               <div className="p-6 space-y-6 bg-card dark:bg-black rounded-lg border border-border dark:border-gray-700">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Backup in Progress</h3>
@@ -1204,9 +1094,21 @@ function ModernBackup() {
                     />
                   </div>
                 </div>
+
+                {/* Real-time logs */}
+                <div className="bg-black text-green-400 font-mono p-2 rounded h-56 overflow-y-auto">
+                  {logs.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">Waiting for logs...</div>
+                  ) : (
+                    logs.map((line, idx) => (
+                      <div key={idx} className="whitespace-pre-wrap text-sm">{line}</div>
+                    ))
+                  )}
+                </div>
               </div>
             </TabsContent>
 
+            {/* Results */}
             <TabsContent value="results" className="mt-6">
               <div className="p-6 space-y-6 bg-card dark:bg-black rounded-lg border border-border dark:border-gray-700">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Backup Results</h3>
@@ -1223,6 +1125,24 @@ function ModernBackup() {
                         </div>
                       </div>
                     </div>
+
+                    <div className="bg-muted dark:bg-gray-700 p-4 rounded-md">
+                      <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">Details</h4>
+                      <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
+                        <li className="flex">
+                          <span className="w-32 text-muted-foreground dark:text-gray-400">Target:</span>
+                          <span>{parameters.hostname || 'Multiple / inventory'}</span>
+                        </li>
+                        <li className="flex">
+                          <span className="w-32 text-muted-foreground dark:text-gray-400">Status:</span>
+                          <span className="text-green-600 dark:text-green-400">Completed</span>
+                        </li>
+                        <li className="flex">
+                          <span className="w-32 text-muted-foreground dark:text-gray-400">Timestamp:</span>
+                          <span>{new Date().toLocaleString()}</span>
+                        </li>
+                      </ul>
+                    </div>
                   </div>
                 ) : (
                   <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-md">
@@ -1232,7 +1152,7 @@ function ModernBackup() {
                       </div>
                       <div className="ml-4">
                         <h4 className="text-lg font-medium text-red-800 dark:text-red-200">Backup Failed</h4>
-                        <p className="mt-1 text-red-700 dark:text-red-300">An error occurred during backup. Please try again.</p>
+                        <p className="mt-1 text-red-700 dark:text-red-300">An error occurred during backup. Please review logs and try again.</p>
                       </div>
                     </div>
                   </div>
@@ -1251,6 +1171,7 @@ function ModernBackup() {
         </div>
       );
     } else if (activeTab === 'restore') {
+      // Restore UI (kept as before)
       return (
         <div className="w-full max-w-4xl mx-auto">
           <div className="mb-6 px-6">
@@ -1415,7 +1336,7 @@ function ModernBackup() {
   };
 
   // =============================================================================
-  // SECTION 4.5: MAIN RENDER SECTION
+  // MAIN RENDER
   // =============================================================================
   return (
     <div className="min-h-screen bg-background text-foreground dark:bg-black">
@@ -1441,7 +1362,4 @@ function ModernBackup() {
   );
 }
 
-// =============================================================================
-// EXPORTS SECTION
-// =============================================================================
 export default ModernBackup;
