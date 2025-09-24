@@ -1,6 +1,6 @@
 # =================================================================================================
 # FILE: api.py (FastAPI Endpoint)
-# VERSION: 2.0.2
+# VERSION: 2.0.4
 # OVERVIEW:
 # A FastAPI application that exposes API endpoints for backup and restore operations.
 # It acts as a bridge between the Rust backend and the Python worker scripts.
@@ -41,6 +41,38 @@ try:
 except ImportError:
     AIOHTTP_AVAILABLE = False
     logger.warning("aiohttp not available. Rust backend forwarding will be disabled.")
+
+
+# Create a single, application-wide aiohttp ClientSession
+# and set a sensible timeout to prevent hanging connections.
+RUST_SESSION_TIMEOUT = 10  # Seconds
+rust_session = None
+
+
+async def get_rust_session():
+    """Returns a memoized aiohttp ClientSession."""
+    global rust_session
+    if rust_session is None or rust_session.closed:
+        rust_session = aiohttp.ClientSession(
+            timeout=ClientTimeout(total=RUST_SESSION_TIMEOUT)
+        )
+    return rust_session
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initializes aiohttp session on startup."""
+    if AIOHTTP_AVAILABLE:
+        await get_rust_session()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Closes aiohttp session on shutdown."""
+    global rust_session
+    if rust_session:
+        await rust_session.close()
+
 
 # =================================================================================================
 # SECTION: WEB SOCKET MANAGER & FORWARDING LOGIC
@@ -99,16 +131,19 @@ async def forward_to_rust_websocket(event_data: dict):
         return
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{RUST_BACKEND_URL}/jobs/broadcast",
-                json=event_data,
-                timeout=ClientTimeout(total=5),
-            ) as response:
-                if response.status != 200:
-                    logger.error(f"Rust backend returned status {response.status}")
-                else:
-                    logger.debug("Event forwarded to Rust backend successfully")
+        session = await get_rust_session()
+        async with session.post(
+            f"{RUST_BACKEND_URL}/jobs/broadcast",
+            json=event_data,
+        ) as response:
+            if response.status != 200:
+                logger.error(f"Rust backend returned status {response.status}")
+            else:
+                logger.debug("Event forwarded to Rust backend successfully")
+    except aiohttp.ClientError as e:
+        logger.error(
+            f"Failed to forward event to Rust backend due to client error: {e}"
+        )
     except Exception as e:
         logger.error(f"Failed to forward event to Rust backend: {e}")
 
@@ -163,7 +198,7 @@ async def read_process_output(process, job_id: str, device: str, job_type: str):
         if not line:
             break
 
-        output_line = line.strip()
+        output_line = line.strip().decode("utf-8")
         output += output_line + "\n"
 
         logger.debug(f"Process output: {output_line}")
@@ -194,8 +229,28 @@ async def read_process_output(process, job_id: str, device: str, job_type: str):
                     data=progress_data,
                 )
         except json.JSONDecodeError:
-            # Not a JSON line, send as generic progress to both systems
-            if output_line and not output_line.isspace():
+            # Not a JSON line, check for specific keywords
+            if output_line.startswith("SUCCESS"):
+                await send_job_progress(
+                    job_id=job_id,
+                    device=device,
+                    job_type=job_type,
+                    event_type="completed",
+                    status="completed",
+                    data={"message": output_line},
+                )
+            elif output_line.startswith("ERROR"):
+                await send_job_progress(
+                    job_id=job_id,
+                    device=device,
+                    job_type=job_type,
+                    event_type="failed",
+                    status="failed",
+                    data={"message": output_line},
+                    error=output_line,
+                )
+            elif output_line and not output_line.isspace():
+                # Treat other non-empty lines as progress updates
                 rust_event = {
                     "job_id": job_id,
                     "device": device,
@@ -311,6 +366,120 @@ async def list_backup_devices():
         raise HTTPException(status_code=500, detail=f"Error listing backups: {str(e)}")
 
 
+async def execute_backup_with_websocket(
+    job_id: str, request: BackupRequest, device: str
+):
+    """Execute backup using the original working approach with proper async handling"""
+    process = None
+    output = ""
+
+    try:
+        args = [
+            "--command",
+            "backup",
+            "--username",
+            request.username,
+            "--password",
+            request.password,
+            "--backup_path",
+            "/shared/data/backups",
+        ]
+
+        if request.hostname:
+            args.extend(["--hostname", request.hostname])
+        if request.inventory_file:
+            args.extend(["--inventory_file", request.inventory_file])
+
+        logger.info(f"Starting backup process for job {job_id} with args: {args}")
+
+        # Use the original working approach with subprocess.Popen
+        process = subprocess.Popen(
+            ["/usr/local/bin/python3", "/xaospy/scripts/backup_and_restore/run.py"]
+            + args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=False,  # Set to False to handle bytes correctly
+            bufsize=1,  # Line buffered
+        )
+
+        logger.info(f"Backup process started with PID: {process.pid}")
+
+        # Read output in real-time using the original read_process_output function
+        output = await read_process_output(process, job_id, device, "backup")
+
+        # Wait for process to complete
+        return_code = await asyncio.to_thread(process.wait)
+
+        logger.info(f"Backup process completed with return code: {return_code}")
+
+        if return_code == 0:
+            # Parse the final result
+            try:
+                final_result_line = (
+                    output.strip().splitlines()[-1] if output.strip() else "{}"
+                )
+                final_result = json.loads(final_result_line)
+
+                await send_job_progress(
+                    job_id=job_id,
+                    device=device,
+                    job_type="backup",
+                    event_type="completed",
+                    status="completed",
+                    data=final_result,
+                )
+                logger.info(f"Backup completed successfully for job {job_id}")
+
+            except (json.JSONDecodeError, IndexError) as e:
+                logger.warning(
+                    f"Could not parse final result, sending generic success: {e}"
+                )
+                await send_job_progress(
+                    job_id=job_id,
+                    device=device,
+                    job_type="backup",
+                    event_type="completed",
+                    status="completed",
+                    data={"message": "Backup completed successfully", "output": output},
+                )
+        else:
+            error_msg = f"Backup failed with return code {return_code}"
+            logger.error(
+                f"Backup failed for job {job_id}: {error_msg}. Output: {output}"
+            )
+            await send_job_progress(
+                job_id=job_id,
+                device=device,
+                job_type="backup",
+                event_type="failed",
+                status="failed",
+                data={"return_code": return_code, "output": output},
+                error=error_msg,
+            )
+
+    except Exception as e:
+        error_msg = f"Backup execution error: {str(e)}"
+        logger.error(f"Error in backup execution for job {job_id}: {error_msg}")
+        await send_job_progress(
+            job_id=job_id,
+            device=device,
+            job_type="backup",
+            event_type="failed",
+            status="failed",
+            data={"error": error_msg, "output": output},
+            error=error_msg,
+        )
+    finally:
+        # Ensure process is cleaned up
+        if process and process.poll() is None:
+            try:
+                logger.info(f"Terminating backup process for job {job_id}")
+                process.terminate()
+                process.wait()
+            except Exception as e:
+                logger.warning(f"Error terminating process: {e}")
+
+
 @app.post("/api/backups/devices")
 async def backup_devices(request: BackupRequest):
     """
@@ -336,113 +505,16 @@ async def backup_devices(request: BackupRequest):
         },
     )
 
-    output = ""  # Initialize output to avoid unbound variable
-    process = None
-    try:
-        args = [
-            "--command",
-            "backup",
-            "--username",
-            request.username,
-            "--password",
-            request.password,
-            "--backup_path",
-            "/shared/data/backups",
-        ]
-        if request.hostname:
-            args.extend(["--hostname", request.hostname])
-        if request.inventory_file:
-            args.extend(["--inventory_file", request.inventory_file])
+    # Start backup process in background
+    asyncio.create_task(execute_backup_with_websocket(job_id, request, device))
 
-        logger.info(
-            f"Executing command: /usr/local/bin/python3 /xaospy/scripts/backup_and_restore/run.py {' '.join(args)}"
-        )
-
-        # Create a blocking subprocess with pipes
-        process = subprocess.Popen(
-            ["/usr/local/bin/python3", "/xaospy/scripts/backup_and_restore/run.py"]
-            + args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-
-        # Read output in real-time using the async-friendly wrapper
-        # This function forwards events to both FastAPI and Rust WebSockets
-        output = await read_process_output(process, job_id, device, "backup")
-
-        # Wait for the process to complete and get the final return code
-        return_code = await asyncio.to_thread(process.wait)
-
-        if return_code == 0:
-            try:
-                # Try to parse the final result as JSON
-                final_result_line = (
-                    output.strip().splitlines()[-1] if output.strip() else "{}"
-                )
-                final_result = json.loads(final_result_line)
-
-                # Send job completed event to both WebSocket systems
-                await send_job_progress(
-                    job_id=job_id,
-                    device=device,
-                    job_type="backup",
-                    event_type="completed",
-                    status="completed",
-                    data=final_result,
-                )
-
-                logger.info(f"Backup completed: {final_result}")
-                return final_result
-            except (json.JSONDecodeError, IndexError):
-                # If no valid JSON, return the raw output
-                result = {"status": "completed", "output": output.strip()}
-                await send_job_progress(
-                    job_id=job_id,
-                    device=device,
-                    job_type="backup",
-                    event_type="completed",
-                    status="completed",
-                    data=result,
-                )
-                return result
-        else:
-            error_msg = f"Backup failed with return code {return_code}"
-            logger.error(f"{error_msg}. Output: {output}")
-
-            # Send job failed event to both WebSocket systems
-            await send_job_progress(
-                job_id=job_id,
-                device=device,
-                job_type="backup",
-                event_type="failed",
-                status="failed",
-                data={"return_code": return_code, "output": output},
-                error=error_msg,
-            )
-
-            raise HTTPException(status_code=500, detail=error_msg)
-
-    except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg)
-
-        # Send job failed event to both WebSocket systems
-        await send_job_progress(
-            job_id=job_id,
-            device=device,
-            job_type="backup",
-            event_type="failed",
-            status="failed",
-            data={"error": error_msg, "output": output},
-            error=error_msg,
-        )
-
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
-    finally:
-        if process and process.poll() is None:
-            process.terminate()
-            await asyncio.to_thread(process.wait)
+    # Return immediate response with job ID
+    return {
+        "status": "started",
+        "job_id": job_id,
+        "message": "Backup process started successfully",
+        "device": device,
+    }
 
 
 # =================================================================================================
@@ -506,7 +578,7 @@ async def restore_device(request: RestoreRequest):
             + args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            text=False,  # Set to False
         )
 
         # Read output in real-time and forward to both WebSocket systems

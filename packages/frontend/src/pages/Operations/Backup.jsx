@@ -536,74 +536,97 @@ function ModernBackup() {
   // SECTION 5.3: handleBackup with Enhanced Real-Time Progress Integration
   // =============================================================================
   const handleBackup = async (event) => {
-    event.preventDefault();
+      event.preventDefault();
 
-    // Basic validation
-    if (!parameters.hostname && !parameters.inventory_file) {
-      toast.error('Please specify a hostname or an inventory file.');
-      return;
-    }
-
-    // NEW: Reset progress steps and move to execute tab with enhanced progress tracking
-    setCurrentBackupTab("execute");
-    setBackupStatus(null);
-    setProgress(0);
-    setProgressSteps([]); // Clear previous progress steps
-    setJobId(null);
-    jobIdRef.current = null;
-    
-    // NEW: Add initial progress step
-    setProgressSteps(prev => [...prev, formatProgressStep('Starting backup process...', 'started')]);
-    
-    toast.loading('Starting backup...', { id: 'backup-toast' });
-
-    const payload = {
-      hostname: parameters.hostname || undefined,
-      inventory_file: parameters.inventory_file || undefined,
-      username: parameters.username,
-      password: parameters.password
-    };
-
-    try {
-      // Trigger backup on backend. Backend will broadcast events via WebSocket.
-      const response = await fetch(`${API_BASE_URL}/api/backups/devices`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await response.json();
-
-      // If API returns immediate job metadata, capture it
-      if (data.job_id) {
-        setJobId(data.job_id);
-        jobIdRef.current = data.job_id;
-        // NEW: Add job ID to progress steps
-        setProgressSteps(prev => [...prev, formatProgressStep(`Job ID: ${data.job_id}`, 'info')]);
+      // Basic validation
+      if (!parameters.hostname && !parameters.inventory_file) {
+          toast.error('Please specify a hostname or an inventory file.');
+          return;
       }
 
-      if (!response.ok) {
-        throw new Error(data.message || `HTTP error! Status: ${response.status}`);
-      }
-
-      // If backend returns final result synchronously (rare in streaming scenarios)
-      if (data.status === 'completed' || data.status === 'success') {
-        setBackupStatus('success');
-        setProgress(100);
-        setProgressSteps(prev => [...prev, formatProgressStep('Backup completed successfully', 'completed')]);
-        setCurrentBackupTab("results");
-        toast.success('Backup completed successfully!', { id: 'backup-toast' });
-      }
-    } catch (error) {
-      console.error("Backup failed:", error);
-      setBackupStatus('error');
+      // Reset progress steps and move to execute tab
+      setCurrentBackupTab("execute");
+      setBackupStatus(null);
       setProgress(0);
-      setProgressSteps(prev => [...prev, formatProgressStep(`Backup failed: ${error.message}`, 'failed')]);
-      setCurrentBackupTab("results");
-      toast.error(`Backup failed: ${error.message}`, { id: 'backup-toast' });
-    }
+      setProgressSteps([]);
+      setJobId(null);
+      jobIdRef.current = null;
+      
+      // Add initial progress step
+      setProgressSteps(prev => [...prev, formatProgressStep('Starting backup process...', 'started')]);
+      
+      toast.loading('Starting backup...', { id: 'backup-toast' });
+
+      const payload = {
+          hostname: parameters.hostname || undefined,
+          inventory_file: parameters.inventory_file || undefined,
+          username: parameters.username,
+          password: parameters.password
+      };
+
+      try {
+          // Trigger backup on backend
+          const response = await fetch(`${API_BASE_URL}/api/backups/devices`, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+              throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+
+          const data = await response.json();
+          console.log("Backup response:", data);
+
+          // FIXED: Handle both response structures
+          let jobId = null;
+          
+          // Check for job_id in root level (new structure)
+          if (data.job_id) {
+              jobId = data.job_id;
+          } 
+          // Check for job_id nested in files object (old structure from curl test)
+          else if (data.files && data.files.job_id) {
+              jobId = data.files.job_id;
+          }
+          // Check for job_id in any nested structure
+          else if (data.data && data.data.job_id) {
+              jobId = data.data.job_id;
+          }
+
+          if (jobId) {
+              setJobId(jobId);
+              jobIdRef.current = jobId;
+              setProgressSteps(prev => [...prev, formatProgressStep(`Backup job started with ID: ${jobId}`, 'info')]);
+              
+              toast.success('Backup started! Tracking progress via WebSocket...', { id: 'backup-toast' });
+              
+              // WebSocket should handle progress updates from here
+          } else {
+              // If no job_id found, check if this is a completed backup response
+              if (data.status === "success" && data.files) {
+                  // This is a completed backup response (synchronous completion)
+                  setBackupStatus('success');
+                  setProgress(100);
+                  setProgressSteps(prev => [...prev, formatProgressStep('Backup completed successfully', 'completed')]);
+                  setCurrentBackupTab("results");
+                  toast.success('Backup completed successfully!', { id: 'backup-toast' });
+              } else {
+                  throw new Error('Backend did not return job ID for tracking');
+              }
+          }
+
+      } catch (error) {
+          console.error("Backup failed to start:", error);
+          setBackupStatus('error');
+          setProgress(0);
+          setProgressSteps(prev => [...prev, formatProgressStep(`Failed to start backup: ${error.message}`, 'failed')]);
+          setCurrentBackupTab("results");
+          toast.error(`Backup failed to start: ${error.message}`, { id: 'backup-toast' });
+      }
   };
 
   // Restore handler (keeps simulated behavior)
@@ -813,97 +836,117 @@ function ModernBackup() {
     }
   }, [parameters]);
 
-  // Keyboard debug
+  // =============================================================================
+  // SECTION 7: WebSocket Integration with Enhanced Progress Step Formatting
+  // =============================================================================
   useEffect(() => {
-    const handleGlobalKeyDown = (e) => {
-      if (e.key.toLowerCase() === 'a' && document.activeElement.tagName === 'INPUT') {
-        console.log('[DEBUG] A key pressed in input:', {
-          key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey, shiftKey: e.shiftKey,
-          target: e.target, targetName: e.target.name, defaultPrevented: e.defaultPrevented
-        });
-      }
+    const ws = new WebSocket(WS_URL);
 
-      if (document.activeElement &&
-          (document.activeElement.tagName === 'INPUT' ||
-           document.activeElement.tagName === 'SELECT' ||
-           document.activeElement.tagName === 'TEXTAREA')) {
-        if (e.ctrlKey || e.altKey || e.metaKey || e.key === 'Enter') {
-          e.stopPropagation();
+    ws.onopen = () => {
+      console.log("✅ Connected to WebSocket backend");
+      // Subscribe to job events
+      const subscribeMsg = {
+        type: "Subscribe",
+        payload: {
+          topics: ["job_events", "jobs:all"]
+        }
+      };
+      ws.send(JSON.stringify(subscribeMsg));
+      console.log("📨 Subscribed to job events");
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        console.log("📡 WebSocket raw message:", msg);
+
+        // Handle different message structures
+        if (msg.type === "JobEvent" && msg.payload) {
+          processJobEvent(msg.payload);
+        } else if (msg.job_id && msg.event_type) {
+          // Direct job event format
+          processJobEvent(msg);
+        } else if (msg.payload && msg.payload.job_id) {
+          // Nested payload format
+          processJobEvent(msg.payload);
+        }
+      } catch (err) {
+        console.error("❌ WebSocket message parsing error:", err, evt.data);
+      }
+    };
+
+    const processJobEvent = (jobEvent) => {
+      // Only process events for our current job
+      if (jobIdRef.current && jobEvent.job_id === jobIdRef.current) {
+        console.log("🎯 Processing job event for current job:", jobEvent);
+        
+        // Format progress message
+        let message = jobEvent.data?.message || jobEvent.message;
+        if (!message) {
+          message = `[${jobEvent.event_type}] ${jobEvent.status || ''}`.trim();
+        }
+        
+        const progressStep = formatProgressStep(message, jobEvent.event_type);
+        setProgressSteps(prev => [...prev, progressStep]);
+
+        // Update UI based on event type
+        switch (jobEvent.event_type) {
+          case "started":
+            setProgress(10);
+            break;
+            
+          case "STEP_START":
+          case "STEP_COMPLETE":
+            setProgress(prev => Math.min(prev + 20, 90));
+            break;
+            
+          case "OPERATION_COMPLETE":
+            if (jobEvent.status === "SUCCESS" || jobEvent.data?.status === "SUCCESS") {
+              setBackupStatus("success");
+              setProgress(100);
+              setTimeout(() => setCurrentBackupTab("results"), 1000);
+              toast.success("Backup completed successfully!");
+            } else {
+              setBackupStatus("error");
+              setProgress(100);
+              setTimeout(() => setCurrentBackupTab("results"), 1000);
+              toast.error(`Backup failed: ${jobEvent.error || jobEvent.data?.error || 'Unknown error'}`);
+            }
+            break;
+            
+          case "progress":
+            setProgress(prev => Math.min(prev + 5, 95));
+            break;
+            
+          case "failed":
+            setBackupStatus("error");
+            setProgress(100);
+            setTimeout(() => setCurrentBackupTab("results"), 1000);
+            toast.error(`Backup failed: ${jobEvent.error || jobEvent.data?.error || 'Unknown error'}`);
+            break;
+            
+          default:
+            // Increment progress for any unknown event
+            setProgress(prev => Math.min(prev + 2, 98));
         }
       }
     };
 
-    window.addEventListener('keydown', handleGlobalKeyDown, true);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    ws.onclose = (event) => {
+      console.log("WebSocket connection closed:", event.code, event.reason);
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close(1000, "Component unmounting");
+      }
+    };
   }, []);
 
-  // =============================================================================
-  // SECTION 7: WebSocket Integration with Enhanced Progress Step Formatting
-  // =============================================================================
-  // =============================================================================
-// SECTION: WebSocket Integration for Job Events
-// =============================================================================
-useEffect(() => {
-  const ws = new WebSocket(WS_URL); // WS_URL = "ws://localhost:3010/ws"
-
-  ws.onopen = () => {
-    console.log("✅ Connected to WS backend:", WS_URL);
-    // Subscribe to job events topic
-    ws.send(JSON.stringify({
-      type: "subscribe",
-      topic: "job_events"
-    }));
-  };
-
-  ws.onmessage = (evt) => {
-    try {
-      const msg = JSON.parse(evt.data);
-      console.log("📡 WS:", msg);
-
-      // Only handle job event payloads (they have job_id + event_type)
-      if (msg.job_id && msg.event_type) {
-        // Append to progress steps
-        setProgressSteps(prev => [
-          ...prev,
-          formatProgressStep(msg.message || JSON.stringify(msg.data), msg.event_type)
-        ]);
-
-        // Update progress if step info is available
-        if (msg.event_type === "STEP_COMPLETE" && msg.status === "COMPLETED") {
-          setProgress(prev => Math.min(prev + 10, 100));
-        }
-
-        // Handle operation completion
-        if (msg.event_type === "OPERATION_COMPLETE") {
-          if (msg.status === "SUCCESS") {
-            setBackupStatus("success");
-            setProgress(100);
-            setCurrentBackupTab("results");
-            toast.success("Backup completed!");
-          } else {
-            setBackupStatus("error");
-            setCurrentBackupTab("results");
-            toast.error(`Backup failed: ${msg.error || msg.message}`);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("❌ WS parse error:", evt.data, err);
-    }
-  };
-
-  ws.onerror = (err) => {
-    console.error("WebSocket error:", err);
-  };
-
-  ws.onclose = () => {
-    console.log("WebSocket closed");
-  };
-
-  return () => {
-    try { ws.close(); } catch (e) {}
-  };
-}, []); // run once on mount
   // =============================================================================
   // SECTION 8: Sidebar / Header components (mock)
   // =============================================================================
