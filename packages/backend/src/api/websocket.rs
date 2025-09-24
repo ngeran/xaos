@@ -1,10 +1,3 @@
-// File: backend/src/api/websocket.rs
-// Version: 2.0.2
-// Key Features:
-// - Fixed move issues in job event broadcasting
-// - Removed unused variables
-// - Enhanced error handling
-
 use axum::{
     extract::{
         ws::WebSocketUpgrade,
@@ -18,6 +11,11 @@ use axum::{
 use serde::Deserialize;
 use std::{net::SocketAddr, sync::Arc};
 use tracing::{error, info};
+use tokio::task;
+use uuid::Uuid;
+use chrono::Utc;
+use std::time::Duration;
+use tokio::time::sleep;
 
 use crate::{
     models::{
@@ -35,10 +33,10 @@ pub fn websocket_routes() -> Router<AppState> {
         .route("/connections", get(get_connections))
         .route("/broadcast", post(broadcast_handler))
         .route("/jobs/broadcast", post(broadcast_job_event_handler))
+        .route("/backups/devices", post(backup_handler))
 }
 
 /// Handler for upgrading a connection to a WebSocket
-/// Fixed: Proper error handling and simplified approach
 async fn ws_handler(
     ws: WebSocketUpgrade,
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
@@ -46,7 +44,6 @@ async fn ws_handler(
 ) -> Response {
     info!("WebSocket connection attempt from: {}", remote_addr);
     
-    // Return the upgrade response immediately
     ws.on_upgrade(move |socket| async move {
         info!("WebSocket upgrade successful for: {}", remote_addr);
         
@@ -97,7 +94,6 @@ async fn broadcast_handler(
         payload.message
     );
 
-    // Validate payload
     if payload.message.is_empty() {
         return Err(ApiError::WebSocketError("Message cannot be empty".to_string()));
     }
@@ -143,7 +139,6 @@ async fn broadcast_job_event_handler(
     State(state): State<AppState>,
     Json(payload): Json<JobEventBroadcastPayload>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    // Clone values for logging before moving them
     let job_id_clone = payload.job_id.clone();
     let device_clone = payload.device.clone();
     
@@ -152,19 +147,17 @@ async fn broadcast_job_event_handler(
         job_id_clone, device_clone, payload.job_type
     );
 
-    // Create job event payload - move the values
     let job_event = JobEventPayload {
         job_id: payload.job_id,
         device: payload.device,
         job_type: payload.job_type,
         event_type: payload.event_type,
         status: payload.status,
-        timestamp: chrono::Utc::now(),
+        timestamp: Utc::now(),
         data: payload.data,
         error: payload.error,
     };
 
-    // Broadcast to job events topic
     state
         .websocket_service
         .broadcast_job_event(job_event)
@@ -180,5 +173,73 @@ async fn broadcast_job_event_handler(
         "message": "Job event broadcast successfully",
         "job_id": job_id_clone,
         "device": device_clone
+    })))
+}
+
+
+/// Request body for starting a backup
+#[derive(Deserialize, Debug)]
+pub struct StartBackupPayload {
+    device_id: String,
+}
+
+/// Handler for starting a backup and reporting progress via WebSocket
+async fn backup_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<StartBackupPayload>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    info!("Backup request received for device: {}", payload.device_id);
+
+    let job_id = Uuid::new_v4().to_string();
+    let job_id_response_clone = job_id.clone(); // ADDED: Clone for the response
+    let service_clone = Arc::clone(&state.websocket_service);
+    let device_id_clone = payload.device_id.clone();
+
+    task::spawn(async move {
+        let start_event = JobEventPayload {
+            job_id: job_id.clone(),
+            device: device_id_clone.clone(),
+            job_type: "backup".to_string(),
+            event_type: "progress".to_string(),
+            status: "in_progress".to_string(),
+            data: serde_json::json!({"message": "Starting backup process..."}),
+            error: None,
+            timestamp: Utc::now(),
+        };
+        let _ = service_clone.broadcast_job_event(start_event).await;
+        
+        for i in 1..=3 {
+            sleep(Duration::from_secs(2)).await;
+            let progress_event = JobEventPayload {
+                job_id: job_id.clone(),
+                device: device_id_clone.clone(),
+                job_type: "backup".to_string(),
+                event_type: "progress".to_string(),
+                status: "in_progress".to_string(),
+                data: serde_json::json!({"message": format!("Processing step {} of 3...", i)}),
+                error: None,
+                timestamp: Utc::now(),
+            };
+            let _ = service_clone.broadcast_job_event(progress_event).await;
+        }
+
+        let complete_event = JobEventPayload {
+            job_id,
+            device: device_id_clone,
+            job_type: "backup".to_string(),
+            event_type: "completed".to_string(),
+            status: "completed".to_string(),
+            data: serde_json::json!({"message": "Backup successfully completed!"}),
+            error: None,
+            timestamp: Utc::now(),
+        };
+        let _ = service_clone.broadcast_job_event(complete_event).await;
+    });
+
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "message": "Backup process started successfully.",
+        "job_id": job_id_response_clone, // CHANGED: Use the cloned variable
+        "device_id": payload.device_id,
     })))
 }
