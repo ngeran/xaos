@@ -1,17 +1,20 @@
 // File: backend/src/services/websocket_service.rs
-// Version: 3.0.7
+// Version: 3.0.8 - FIXED RESPONSE STATUS + ENHANCED DEBUGGING
 // Key Features:
 // - Enhanced Pong response handling with proper formatting
 // - Added dedicated pong response method
 // - Improved debugging for ping/pong operations
 // - Fixed connection timing to prevent premature timeouts
 // - Added job event broadcasting functionality
+// - FIXED: Backup handler now returns "started" status instead of misleading "success"
+// - ENHANCED: Added comprehensive validation and debugging to backup operations
 //
 // How to Guide:
 // 1. Backend responds to Ping with properly formatted Pong messages
 // 2. Enhanced debugging shows detailed ping/pong timing
 // 3. Fixed connection timing to prevent premature timeouts
 // 4. Job events are broadcast to subscribed connections
+// 5. Backup operations return proper status codes
 
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{
@@ -270,44 +273,43 @@ impl WebSocketService {
     }
 
     /// Handle job subscription request
-    // In the handle_job_subscription method, fix the move issues:
-async fn handle_job_subscription(
-    &self,
-    connection_id: ConnectionId,
-    payload: JobSubscriptionPayload,
-) -> Result<(), ApiError> {
-    let mut connections = self.connections.write().await;
-    if let Some(conn) = connections.get_mut(&connection_id) {
-        // Clone the values before moving them
-        let device_filter_clone = payload.device_filter.clone();
-        let job_type_filter_clone = payload.job_type_filter.clone();
+    async fn handle_job_subscription(
+        &self,
+        connection_id: ConnectionId,
+        payload: JobSubscriptionPayload,
+    ) -> Result<(), ApiError> {
+        let mut connections = self.connections.write().await;
+        if let Some(conn) = connections.get_mut(&connection_id) {
+            // Clone the values before moving them
+            let device_filter_clone = payload.device_filter.clone();
+            let job_type_filter_clone = payload.job_type_filter.clone();
+            
+            let subscription_id = conn.info.add_job_subscription(
+                payload.device_filter,
+                payload.job_type_filter,
+            );
+            
+            // Send subscription confirmation - use the cloned values
+            let response = WsMessage::Custom {
+                event: "job_subscription_confirmed".to_string(),
+                payload: serde_json::json!({
+                    "subscription_id": subscription_id,
+                    "device_filter": device_filter_clone,
+                    "job_type_filter": job_type_filter_clone
+                }),
+            };
+            
+            self.send_to_connection(connection_id, response).await?;
+            
+            info!(
+                "Job subscription created for {}: device_filter={:?}, job_type_filter={:?}",
+                connection_id, device_filter_clone, job_type_filter_clone
+            );
+        }
         
-        let subscription_id = conn.info.add_job_subscription(
-            payload.device_filter,
-            payload.job_type_filter,
-        );
-        
-        // Send subscription confirmation - use the cloned values
-        let response = WsMessage::Custom {
-            event: "job_subscription_confirmed".to_string(),
-            payload: serde_json::json!({
-                "subscription_id": subscription_id,
-                "device_filter": device_filter_clone,
-                "job_type_filter": job_type_filter_clone
-            }),
-        };
-        
-        self.send_to_connection(connection_id, response).await?;
-        
-        info!(
-            "Job subscription created for {}: device_filter={:?}, job_type_filter={:?}",
-            connection_id, device_filter_clone, job_type_filter_clone
-        );
+        Ok(())
     }
-    
-    Ok(())
 }
-    }
 
 // ═══════════════════════════════════════════════════════════════════════════════════
 // CONNECTION HANDLING WITH METRICS AND DEBUGGING

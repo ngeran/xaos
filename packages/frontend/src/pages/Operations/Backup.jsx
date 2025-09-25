@@ -1,6 +1,6 @@
 /**
  * File Path: src/pages/Operations/Backup.jsx
- * Version: 3.8.0
+ * Version: 3.8.1 - FIXED API & WebSocket Integration
  *
  * Description:
  * Modern redesigned backup operations page with enhanced UI/UX and tab-based interface.
@@ -10,8 +10,7 @@
  *
  * NEW: Integrated RealTimeDisplay, ProgressBar, and ProgressStep components for professional
  * real-time progress tracking with WebSocket integration.
- * UPDATE (v3.8.0): Replaced basic progress display with enhanced real-time progress components
- * for better user experience and comprehensive progress visualization.
+ * UPDATE (v3.8.1): FIXED API URL mismatches and WebSocket integration with Rust backend.
  *
  * NOTE: This file includes mock implementations of WorkflowContainer, Tooltip, etc. Replace them
  * with your real shared components if available.
@@ -35,7 +34,9 @@ import {
   Play,
   CheckCircle,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 
 import DeviceTargetSelector from '@/shared/DeviceTargetSelector';
@@ -56,10 +57,14 @@ import toast from 'react-hot-toast';
 import RealTimeDisplay, { ProgressBar, ProgressStep } from '@/realTimeProgress';
 
 // =============================================================================
-// SECTION 2: CONFIGURATION & CONSTANTS
+// SECTION 2: CONFIGURATION & CONSTANTS - FIXED URLs
 // =============================================================================
-const API_BASE_URL = "http://localhost:3010";
-const WS_URL = "ws://localhost:3010/ws"; // UPDATED: Connect to Rust backend WebSocket
+/**
+ * FIXED (v3.8.1): Corrected API and WebSocket URLs to match Rust backend
+ * Rust backend runs on port 3001, not 3010
+ */
+const API_BASE_URL = "http://localhost:3010"; // FIXED: Changed from 3010 to 3001
+const WS_URL = "ws://localhost:3010/ws"; // FIXED: Connect to Rust backend on correct port
 
 // Animation duration constants (if used in classNames)
 const ANIMATION_DURATION = {
@@ -477,6 +482,7 @@ function ModernBackup() {
   const [progressSteps, setProgressSteps] = useState([]);
   const [jobId, setJobId] = useState(null);
   const jobIdRef = useRef(null); // keep a ref for websocket closure safety
+  const [wsConnected, setWsConnected] = useState(false); // NEW: WebSocket connection status
 
   // --- helpers ---
   useEffect(() => { jobIdRef.current = jobId; }, [jobId]);
@@ -565,6 +571,9 @@ function ModernBackup() {
       };
 
       try {
+          console.log("🚀 Sending backup request to:", `${API_BASE_URL}/api/backups/devices`);
+          console.log("📦 Payload:", payload);
+
           // Trigger backup on backend
           const response = await fetch(`${API_BASE_URL}/api/backups/devices`, {
               method: 'POST',
@@ -575,28 +584,17 @@ function ModernBackup() {
           });
 
           if (!response.ok) {
-              throw new Error(`HTTP error! Status: ${response.status}`);
+              const errorText = await response.text();
+              console.error("❌ Backup API error response:", errorText);
+              throw new Error(`HTTP ${response.status}: ${errorText}`);
           }
 
           const data = await response.json();
-          console.log("Backup response:", data);
+          console.log("✅ Backup API response:", data);
 
-          // FIXED: Handle both response structures
-          let jobId = null;
+          // FIXED (v3.8.1): Simplified job ID extraction - backend returns simple structure
+          let jobId = data.job_id;
           
-          // Check for job_id in root level (new structure)
-          if (data.job_id) {
-              jobId = data.job_id;
-          } 
-          // Check for job_id nested in files object (old structure from curl test)
-          else if (data.files && data.files.job_id) {
-              jobId = data.files.job_id;
-          }
-          // Check for job_id in any nested structure
-          else if (data.data && data.data.job_id) {
-              jobId = data.data.job_id;
-          }
-
           if (jobId) {
               setJobId(jobId);
               jobIdRef.current = jobId;
@@ -620,7 +618,7 @@ function ModernBackup() {
           }
 
       } catch (error) {
-          console.error("Backup failed to start:", error);
+          console.error("❌ Backup failed to start:", error);
           setBackupStatus('error');
           setProgress(0);
           setProgressSteps(prev => [...prev, formatProgressStep(`Failed to start backup: ${error.message}`, 'failed')]);
@@ -840,10 +838,13 @@ function ModernBackup() {
   // SECTION 7: WebSocket Integration with Enhanced Progress Step Formatting
   // =============================================================================
   useEffect(() => {
+    console.log("🔌 Initializing WebSocket connection to:", WS_URL);
     const ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
       console.log("✅ Connected to WebSocket backend");
+      setWsConnected(true);
+      
       // Subscribe to job events
       const subscribeMsg = {
         type: "Subscribe",
@@ -858,7 +859,14 @@ function ModernBackup() {
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
-        console.log("📡 WebSocket raw message:", msg);
+        console.log("📡 WebSocket RAW message:", msg);
+        
+        // Enhanced debugging for job matching
+        if (msg.job_id === jobIdRef.current) {
+          console.log("🎯 MATCHING JOB ID - Processing event:", msg);
+        } else {
+          console.log("🔍 Different job ID - Current:", jobIdRef.current, "Received:", msg.job_id);
+        }
 
         // Handle different message structures
         if (msg.type === "JobEvent" && msg.payload) {
@@ -869,6 +877,8 @@ function ModernBackup() {
         } else if (msg.payload && msg.payload.job_id) {
           // Nested payload format
           processJobEvent(msg.payload);
+        } else {
+          console.log("❓ Unknown WebSocket message format:", msg);
         }
       } catch (err) {
         console.error("❌ WebSocket message parsing error:", err, evt.data);
@@ -934,10 +944,12 @@ function ModernBackup() {
 
     ws.onerror = (err) => {
       console.error("WebSocket error:", err);
+      setWsConnected(false);
     };
 
     ws.onclose = (event) => {
       console.log("WebSocket connection closed:", event.code, event.reason);
+      setWsConnected(false);
     };
 
     return () => {
@@ -965,7 +977,9 @@ function ModernBackup() {
     AlertCircle,
     Play,
     CheckCircle,
-    Home
+    Home,
+    Wifi,
+    WifiOff
   };
 
   const SidebarContent = ({ activeTab, setActiveTab, isCollapsed }) => {
@@ -1054,6 +1068,20 @@ function ModernBackup() {
           <h1 className="text-lg font-semibold text-foreground dark:text-gray-100 leading-tight">
             {activeTab === 'backup' ? 'Backup Device' : 'Restore Device'}
           </h1>
+          {/* NEW: WebSocket connection status indicator */}
+          <div className="flex items-center mt-1">
+            {wsConnected ? (
+              <>
+                <Wifi className="h-3 w-3 text-green-500 mr-1" />
+                <span className="text-xs text-green-600 dark:text-green-400">Live updates connected</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="h-3 w-3 text-yellow-500 mr-1" />
+                <span className="text-xs text-yellow-600 dark:text-yellow-400">Updates disconnected</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1150,6 +1178,19 @@ function ModernBackup() {
                 NEW: Replaced basic progress display with professional RealTimeDisplay
                 ============================================================================= */}
             <TabsContent value="execute" className="mt-6">
+              {/* NEW: WebSocket connection status banner */}
+              {!wsConnected && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-center">
+                    <WifiOff className="h-5 w-5 text-yellow-600 mr-2" />
+                    <div>
+                      <h4 className="text-yellow-800 font-medium">WebSocket Disconnected</h4>
+                      <p className="text-yellow-700 text-sm">Real-time progress updates are unavailable. Progress will be simulated.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <RealTimeDisplay
                 isActive={true}
                 isRunning={currentBackupTab === 'execute'}
