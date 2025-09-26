@@ -1,3 +1,11 @@
+// =================================================================================================
+// FILE: websocket.rs
+// VERSION: 2.0.0 - Enhanced Backup API Integration
+// DESCRIPTION: 
+// Comprehensive WebSocket management with backup API integration. Handles real-time progress
+// updates and forwards backup requests to Python API for actual script execution.
+// =================================================================================================
+
 use axum::{
     extract::{
         ws::WebSocketUpgrade,
@@ -16,6 +24,7 @@ use uuid::Uuid;
 use chrono::Utc;
 use std::time::Duration;
 use tokio::time::sleep;
+use reqwest::Client;
 
 use crate::{
     models::{
@@ -25,7 +34,19 @@ use crate::{
     AppState,
 };
 
-/// FIXED: Defines all WebSocket-related API routes with correct paths
+// =================================================================================================
+// SECTION: ROUTE CONFIGURATION
+// =================================================================================================
+
+/// Defines all WebSocket-related API routes with correct paths
+/// 
+/// Routes:
+/// - /ws: WebSocket connection endpoint
+/// - /status: Service status check
+/// - /connections: Active connections list
+/// - /broadcast: Generic message broadcasting
+/// - /jobs/broadcast: Job event broadcasting
+/// - /api/backups/devices: Backup API endpoint (frontend-facing)
 pub fn websocket_routes() -> Router<AppState> {
     Router::new()
         .route("/ws", get(ws_handler))
@@ -33,11 +54,20 @@ pub fn websocket_routes() -> Router<AppState> {
         .route("/connections", get(get_connections))
         .route("/broadcast", post(broadcast_handler))
         .route("/jobs/broadcast", post(broadcast_job_event_handler))
-        // FIXED: Added the missing /backups/devices route that the frontend is calling
-        .route("/backups/devices", post(backup_handler))
+        .route("/api/backups/devices", post(backup_handler))
 }
 
+// =================================================================================================
+// SECTION: WEB SOCKET CONNECTION MANAGEMENT
+// =================================================================================================
+
 /// Handler for upgrading a connection to a WebSocket
+/// 
+/// This endpoint:
+/// - Accepts WebSocket upgrade requests
+/// - Logs connection attempts
+/// - Handles WebSocket protocol upgrade
+/// - Delegates connection management to WebSocketService
 async fn ws_handler(
     ws: WebSocketUpgrade,
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
@@ -55,7 +85,16 @@ async fn ws_handler(
     })
 }
 
+// =================================================================================================
+// SECTION: SERVICE STATUS & MONITORING
+// =================================================================================================
+
 /// Handler for getting WebSocket service status
+/// 
+/// Returns:
+/// - Service statistics
+/// - Connection counts
+/// - Health status
 async fn get_status(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
@@ -66,7 +105,11 @@ async fn get_status(
     Ok(Json(stats))
 }
 
-/// Handler for getting active connections
+/// Handler for getting active WebSocket connections
+/// 
+/// Returns:
+/// - List of active connections
+/// - Connection metadata
 async fn get_connections(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
@@ -77,6 +120,10 @@ async fn get_connections(
     Ok(Json(serde_json::json!(connections)))
 }
 
+// =================================================================================================
+// SECTION: MESSAGE BROADCASTING
+// =================================================================================================
+
 /// Request body for broadcasting messages
 #[derive(Deserialize, Debug)]
 pub struct BroadcastPayload {
@@ -85,6 +132,11 @@ pub struct BroadcastPayload {
 }
 
 /// Handler for broadcasting messages to a specific topic
+/// 
+/// Features:
+/// - Message validation (length, content)
+/// - Topic-based broadcasting
+/// - Error handling for invalid messages
 async fn broadcast_handler(
     State(state): State<AppState>,
     Json(payload): Json<BroadcastPayload>,
@@ -95,6 +147,7 @@ async fn broadcast_handler(
         payload.message
     );
 
+    // Validate message
     if payload.message.is_empty() {
         return Err(ApiError::WebSocketError("Message cannot be empty".to_string()));
     }
@@ -123,6 +176,10 @@ async fn broadcast_handler(
     })))
 }
 
+// =================================================================================================
+// SECTION: JOB EVENT BROADCASTING
+// =================================================================================================
+
 /// Request body for broadcasting job events
 #[derive(Deserialize, Debug)]
 pub struct JobEventBroadcastPayload {
@@ -136,6 +193,11 @@ pub struct JobEventBroadcastPayload {
 }
 
 /// Handler for broadcasting job events for real-time device operation updates
+/// 
+/// This endpoint:
+/// - Receives job progress events from Python API
+/// - Broadcasts them to all connected WebSocket clients
+/// - Supports real-time backup/restore progress updates
 async fn broadcast_job_event_handler(
     State(state): State<AppState>,
     Json(payload): Json<JobEventBroadcastPayload>,
@@ -177,7 +239,11 @@ async fn broadcast_job_event_handler(
     })))
 }
 
-/// FIXED: Request body structure to match what the frontend is sending
+// =================================================================================================
+// SECTION: BACKUP API INTEGRATION
+// =================================================================================================
+
+/// Request body structure for backup operations (matches frontend format)
 #[derive(Deserialize, Debug)]
 pub struct StartBackupPayload {
     device_id: String,
@@ -187,16 +253,24 @@ pub struct StartBackupPayload {
     password: String,
 }
 
-/// FIXED: Handler for starting a backup and reporting progress via WebSocket
-/// This is the endpoint the frontend is actually calling: /backups/devices
-// Replace your backup_handler with this simplified debugging version
+/// Main backup handler that coordinates between frontend and Python API
+/// 
+/// This handler:
+/// 1. Receives backup requests from frontend
+/// 2. Validates input parameters
+/// 3. Generates unique job ID
+/// 4. Forwards request to Python API
+/// 5. Monitors progress via WebSocket events
+/// 6. Returns immediate response to frontend
 async fn backup_handler(
     State(state): State<AppState>,
     Json(payload): Json<StartBackupPayload>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    println!("🚀 BACKUP HANDLER CALLED for device: {}", payload.device_id);
+    info!("🚀 BACKUP HANDLER CALLED for device: {}", payload.device_id);
 
-    // Basic validation
+    // =========================================================================
+    // STEP 1: INPUT VALIDATION
+    // =========================================================================
     if payload.device_id.trim().is_empty() {
         return Err(ApiError::WebSocketError("Device ID cannot be empty".to_string()));
     }
@@ -207,95 +281,149 @@ async fn backup_handler(
         return Err(ApiError::WebSocketError("Password cannot be empty".to_string()));
     }
 
+    // =========================================================================
+    // STEP 2: JOB INITIALIZATION
+    // =========================================================================
     let job_id = Uuid::new_v4().to_string();
-    let job_id_clone = job_id.clone();
     let service_clone = Arc::clone(&state.websocket_service);
     let device_id_clone = payload.device_id.clone();
 
-    println!("✅ Generated job ID: {}", job_id);
+    info!("✅ Generated job ID: {}", job_id);
 
-    // Send immediate "started" event
+    // =========================================================================
+    // STEP 3: SEND START EVENT
+    // =========================================================================
     let start_event = JobEventPayload {
         job_id: job_id.clone(),
         device: device_id_clone.clone(),
         job_type: "backup".to_string(),
-        event_type: "started".to_string(),
+        event_type: "OPERATION_START".to_string(),
         status: "in_progress".to_string(),
         data: serde_json::json!({
             "message": "Backup process initiated successfully",
+            "step": 0,
+            "total_steps": 12 // Estimated total steps for backup process
         }),
         error: None,
         timestamp: Utc::now(),
     };
     
-    println!("📡 Broadcasting start event...");
-    match service_clone.broadcast_job_event(start_event).await {
-        Ok(_) => println!("✅ Start event broadcast successful"),
-        Err(e) => println!("❌ Start event broadcast failed: {}", e),
-    }
+    service_clone.broadcast_job_event(start_event).await?;
+    info!("📡 Start event broadcast for job: {}", job_id);
 
-    // SIMPLIFIED: Spawn a simple background task
-    println!("🔧 Spawning background task...");
+    // =========================================================================
+    // STEP 4: FORWARD TO PYTHON API (BACKGROUND TASK)
+    // =========================================================================
     task::spawn(async move {
-        println!("🏃 Background task STARTED for job: {}", job_id);
+        info!("🏃 Starting real backup process for job: {}", job_id);
         
-        // Wait 3 seconds then send progress
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        println!("📈 Sending progress event for job: {}", job_id);
+        let client = Client::new();
+        let python_api_url = "http://python_runner:8000/api/backups/devices";
         
-        let progress_event = JobEventPayload {
-            job_id: job_id.clone(),
-            device: device_id_clone.clone(),
-            job_type: "backup".to_string(),
-            event_type: "progress".to_string(),
-            status: "in_progress".to_string(),
-            data: serde_json::json!({
-                "message": "Step 1: Connecting to device...",
-                "progress": 25
-            }),
-            error: None,
-            timestamp: Utc::now(),
-        };
-        
-        match service_clone.broadcast_job_event(progress_event).await {
-            Ok(_) => println!("✅ Progress event broadcast successful"),
-            Err(e) => println!("❌ Progress event broadcast failed: {}", e),
+        // Prepare request for Python API
+        let backup_request = serde_json::json!({
+            "hostname": payload.hostname.unwrap_or_else(|| payload.device_id.clone()),
+            "inventory_file": payload.inventory_file.unwrap_or_default(),
+            "username": payload.username,
+            "password": payload.password
+        });
+
+        info!("🔗 Forwarding to Python API: {}", python_api_url);
+        info!("📦 Payload: {:?}", backup_request);
+
+        match client.post(python_api_url)
+            .json(&backup_request)
+            .timeout(Duration::from_secs(120)) // 2-minute timeout
+            .send()
+            .await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<serde_json::Value>().await {
+                        Ok(result) => {
+                            info!("✅ Python API response: {:?}", result);
+                            
+                            // Send completion event
+                            let complete_event = JobEventPayload {
+                                job_id: job_id.clone(),
+                                device: device_id_clone.clone(),
+                                job_type: "backup".to_string(),
+                                event_type: "OPERATION_COMPLETE".to_string(),
+                                status: "completed".to_string(),
+                                data: serde_json::json!({
+                                    "message": "Backup completed successfully via Python API",
+                                    "result": result,
+                                    "step": 12,
+                                    "total_steps": 12
+                                }),
+                                error: None,
+                                timestamp: Utc::now(),
+                            };
+                            
+                            service_clone.broadcast_job_event(complete_event).await.ok();
+                            info!("🎉 Backup completed successfully for job: {}", job_id);
+                        }
+                        Err(e) => {
+                            error!("❌ Failed to parse Python API response: {}", e);
+                            send_error_event(&service_clone, &job_id, &device_id_clone, 
+                                &format!("Failed to parse Python API response: {}", e)).await;
+                        }
+                    }
+                } else {
+                    let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    error!("❌ Python API returned error: HTTP {}", response.status());
+                    send_error_event(&service_clone, &job_id, &device_id_clone, 
+                        &format!("Python API error: HTTP {} - {}", response.status(), error_text)).await;
+                }
+            }
+            Err(e) => {
+                error!("❌ Failed to call Python API: {}", e);
+                send_error_event(&service_clone, &job_id, &device_id_clone, 
+                    &format!("Failed to connect to Python API: {}", e)).await;
+            }
         }
-        
-        // Wait another 3 seconds then complete
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        println!("🎉 Sending completion event for job: {}", job_id);
-        
-        let complete_event = JobEventPayload {
-            job_id: job_id.clone(),
-            device: device_id_clone.clone(),
-            job_type: "backup".to_string(),
-            event_type: "completed".to_string(),
-            status: "completed".to_string(),
-            data: serde_json::json!({
-                "message": "Backup completed successfully!",
-                "progress": 100
-            }),
-            error: None,
-            timestamp: Utc::now(),
-        };
-        
-        match service_clone.broadcast_job_event(complete_event).await {
-            Ok(_) => println!("✅ Completion event broadcast successful"),
-            Err(e) => println!("❌ Completion event broadcast failed: {}", e),
-        }
-        
-        println!("🏁 Background task COMPLETED for job: {}", job_id);
     });
 
-    println!("📤 Returning response for job: {}", job_id_clone);
+    // =========================================================================
+    // STEP 5: RETURN IMMEDIATE RESPONSE TO FRONTEND
+    // =========================================================================
+    info!("📤 Returning immediate response for job: {}", job_id);
 
-    // Return immediate response
     Ok(Json(serde_json::json!({
         "status": "started",
         "message": "Backup process initiated successfully",
-        "job_id": job_id_clone,
+        "job_id": job_id,
         "device_id": payload.device_id,
         "timestamp": Utc::now().to_rfc3339()
     })))
+}
+
+// =================================================================================================
+// SECTION: HELPER FUNCTIONS
+// =================================================================================================
+
+/// Helper function to send error events via WebSocket
+async fn send_error_event(
+    service: &Arc<crate::websocket::WebSocketService>,
+    job_id: &str,
+    device_id: &str,
+    error_msg: &str,
+) {
+    let error_event = JobEventPayload {
+        job_id: job_id.to_string(),
+        device: device_id.to_string(),
+        job_type: "backup".to_string(),
+        event_type: "OPERATION_COMPLETE".to_string(),
+        status: "failed".to_string(),
+        data: serde_json::json!({
+            "message": "Backup process failed",
+            "step": 0,
+            "total_steps": 12
+        }),
+        error: Some(error_msg.to_string()),
+        timestamp: Utc::now(),
+    };
+    
+    if let Err(e) = service.broadcast_job_event(error_event).await {
+        error!("❌ Failed to send error event: {}", e);
+    }
 }
