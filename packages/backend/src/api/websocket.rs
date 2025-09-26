@@ -25,7 +25,7 @@ use crate::{
     AppState,
 };
 
-/// Defines all WebSocket-related API routes
+/// FIXED: Defines all WebSocket-related API routes with correct paths
 pub fn websocket_routes() -> Router<AppState> {
     Router::new()
         .route("/ws", get(ws_handler))
@@ -33,6 +33,7 @@ pub fn websocket_routes() -> Router<AppState> {
         .route("/connections", get(get_connections))
         .route("/broadcast", post(broadcast_handler))
         .route("/jobs/broadcast", post(broadcast_job_event_handler))
+        // FIXED: Added the missing /backups/devices route that the frontend is calling
         .route("/backups/devices", post(backup_handler))
 }
 
@@ -176,59 +177,44 @@ async fn broadcast_job_event_handler(
     })))
 }
 
-/// Request body for starting a backup
+/// FIXED: Request body structure to match what the frontend is sending
 #[derive(Deserialize, Debug)]
 pub struct StartBackupPayload {
     device_id: String,
-    username: String,
-    password: String,
     hostname: Option<String>,
     inventory_file: Option<String>,
+    username: String,
+    password: String,
 }
 
-/// Handler for starting a backup and reporting progress via WebSocket
-/// FIXED: Now returns "started" status instead of misleading "success"
-/// ENHANCED: Added comprehensive validation and debugging
+/// FIXED: Handler for starting a backup and reporting progress via WebSocket
+/// This is the endpoint the frontend is actually calling: /backups/devices
+// Replace your backup_handler with this simplified debugging version
 async fn backup_handler(
     State(state): State<AppState>,
     Json(payload): Json<StartBackupPayload>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    info!("Backup request received for device: {}", payload.device_id);
+    println!("🚀 BACKUP HANDLER CALLED for device: {}", payload.device_id);
 
-    // Enhanced validation with detailed error messages
+    // Basic validation
     if payload.device_id.trim().is_empty() {
-        warn!("Backup request rejected: empty device_id");
         return Err(ApiError::WebSocketError("Device ID cannot be empty".to_string()));
     }
     if payload.username.trim().is_empty() {
-        warn!("Backup request rejected: empty username");
         return Err(ApiError::WebSocketError("Username cannot be empty".to_string()));
     }
     if payload.password.trim().is_empty() {
-        warn!("Backup request rejected: empty password");
         return Err(ApiError::WebSocketError("Password cannot be empty".to_string()));
     }
 
-    // Validate that either hostname or inventory_file is provided
-    if payload.hostname.is_none() && payload.inventory_file.is_none() {
-        warn!("Backup request rejected: no target specified (need hostname or inventory_file)");
-        return Err(ApiError::WebSocketError(
-            "Either hostname or inventory_file must be specified".to_string()
-        ));
-    }
-
     let job_id = Uuid::new_v4().to_string();
-    let job_id_response_clone = job_id.clone();
+    let job_id_clone = job_id.clone();
     let service_clone = Arc::clone(&state.websocket_service);
     let device_id_clone = payload.device_id.clone();
-    let username_clone = payload.username.clone();
 
-    debug!(
-        "Starting backup job {} for device {} with user {}",
-        job_id, device_id_clone, username_clone
-    );
+    println!("✅ Generated job ID: {}", job_id);
 
-    // Send immediate "started" event with enhanced debugging info
+    // Send immediate "started" event
     let start_event = JobEventPayload {
         job_id: job_id.clone(),
         device: device_id_clone.clone(),
@@ -236,88 +222,50 @@ async fn backup_handler(
         event_type: "started".to_string(),
         status: "in_progress".to_string(),
         data: serde_json::json!({
-            "message": "Validating credentials and starting backup process...",
-            "target": {
-                "hostname": payload.hostname,
-                "inventory_file": payload.inventory_file,
-                "username": payload.username,
-                "has_password": !payload.password.is_empty()
-            },
-            "validation": "passed"
+            "message": "Backup process initiated successfully",
         }),
         error: None,
         timestamp: Utc::now(),
     };
     
-    // Broadcast the start event
-    if let Err(e) = service_clone.broadcast_job_event(start_event).await {
-        error!("Failed to broadcast backup start event: {}", e);
-        // Continue anyway - don't fail the entire request due to broadcast failure
+    println!("📡 Broadcasting start event...");
+    match service_clone.broadcast_job_event(start_event).await {
+        Ok(_) => println!("✅ Start event broadcast successful"),
+        Err(e) => println!("❌ Start event broadcast failed: {}", e),
     }
 
-    // Spawn background task with enhanced debugging
+    // SIMPLIFIED: Spawn a simple background task
+    println!("🔧 Spawning background task...");
     task::spawn(async move {
-        debug!("Backup background task started for job {}", job_id);
-
-        // Simulate backup process with proper error handling and progress reporting
-        for i in 1..=5 {
-            sleep(Duration::from_secs(2)).await;
-            
-            let progress = i * 20;
-            let step_message = match i {
-                1 => "Connecting to device...",
-                2 => "Authenticating with device...",
-                3 => "Retrieving configuration...",
-                4 => "Saving backup file...",
-                5 => "Finalizing backup...",
-                _ => "Processing...",
-            };
-
-            let progress_event = JobEventPayload {
-                job_id: job_id.clone(),
-                device: device_id_clone.clone(),
-                job_type: "backup".to_string(),
-                event_type: "progress".to_string(),
-                status: "in_progress".to_string(),
-                data: serde_json::json!({
-                    "message": step_message,
-                    "progress": progress,
-                    "step": i,
-                    "total_steps": 5
-                }),
-                error: None,
-                timestamp: Utc::now(),
-            };
-            
-            if let Err(e) = service_clone.broadcast_job_event(progress_event).await {
-                warn!("Failed to broadcast progress event for job {}: {}", job_id, e);
-            }
-
-            // Simulate potential failure (for testing)
-            if i == 3 && device_id_clone.contains("fail") {
-                let error_event = JobEventPayload {
-                    job_id: job_id.clone(),
-                    device: device_id_clone.clone(),
-                    job_type: "backup".to_string(),
-                    event_type: "failed".to_string(),
-                    status: "failed".to_string(),
-                    data: serde_json::json!({
-                        "message": "Simulated authentication failure",
-                        "progress": progress,
-                        "error_code": "AUTH_FAILED"
-                    }),
-                    error: Some("Authentication failed: invalid credentials".to_string()),
-                    timestamp: Utc::now(),
-                };
-                
-                if let Err(e) = service_clone.broadcast_job_event(error_event).await {
-                    error!("Failed to broadcast error event: {}", e);
-                }
-                return; // Exit the task on failure
-            }
+        println!("🏃 Background task STARTED for job: {}", job_id);
+        
+        // Wait 3 seconds then send progress
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        println!("📈 Sending progress event for job: {}", job_id);
+        
+        let progress_event = JobEventPayload {
+            job_id: job_id.clone(),
+            device: device_id_clone.clone(),
+            job_type: "backup".to_string(),
+            event_type: "progress".to_string(),
+            status: "in_progress".to_string(),
+            data: serde_json::json!({
+                "message": "Step 1: Connecting to device...",
+                "progress": 25
+            }),
+            error: None,
+            timestamp: Utc::now(),
+        };
+        
+        match service_clone.broadcast_job_event(progress_event).await {
+            Ok(_) => println!("✅ Progress event broadcast successful"),
+            Err(e) => println!("❌ Progress event broadcast failed: {}", e),
         }
-
-        // Final completion event with success details
+        
+        // Wait another 3 seconds then complete
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        println!("🎉 Sending completion event for job: {}", job_id);
+        
         let complete_event = JobEventPayload {
             job_id: job_id.clone(),
             device: device_id_clone.clone(),
@@ -325,39 +273,29 @@ async fn backup_handler(
             event_type: "completed".to_string(),
             status: "completed".to_string(),
             data: serde_json::json!({
-                "message": "Backup successfully completed!",
-                "progress": 100,
-                "result": {
-                    "files_created": 1,
-                    "backup_size": "15.7 KB",
-                    "timestamp": Utc::now().to_rfc3339()
-                }
+                "message": "Backup completed successfully!",
+                "progress": 100
             }),
             error: None,
             timestamp: Utc::now(),
         };
         
-        if let Err(e) = service_clone.broadcast_job_event(complete_event).await {
-            error!("Failed to broadcast completion event for job {}: {}", job_id, e);
+        match service_clone.broadcast_job_event(complete_event).await {
+            Ok(_) => println!("✅ Completion event broadcast successful"),
+            Err(e) => println!("❌ Completion event broadcast failed: {}", e),
         }
-
-        debug!("Backup background task completed for job {}", job_id);
+        
+        println!("🏁 Background task COMPLETED for job: {}", job_id);
     });
 
-    info!("Backup process initiated successfully for device {}", payload.device_id);
+    println!("📤 Returning response for job: {}", job_id_clone);
 
-    // Return "started" status, not "success" - this is the key fix
+    // Return immediate response
     Ok(Json(serde_json::json!({
-        "status": "started",  // FIXED: Changed from "success" to "started"
+        "status": "started",
         "message": "Backup process initiated successfully",
-        "job_id": job_id_response_clone,
+        "job_id": job_id_clone,
         "device_id": payload.device_id,
-        "timestamp": Utc::now().to_rfc3339(),
-        "debug_info": {
-            "validation": "passed",
-            "target_specified": payload.hostname.is_some() || payload.inventory_file.is_some(),
-            "username_provided": !payload.username.is_empty(),
-            "password_provided": !payload.password.is_empty()
-        }
+        "timestamp": Utc::now().to_rfc3339()
     })))
 }

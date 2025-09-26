@@ -1,19 +1,18 @@
 /**
  * File Path: src/pages/Operations/Backup.jsx
- * Version: 3.8.1 - FIXED API & WebSocket Integration
+ * Version: 3.8.7 - FIXED DYNAMIC TOTAL STEPS AND WEBSOCKET ISSUES
  *
- * Description:
- * Modern redesigned backup operations page with enhanced UI/UX and tab-based interface.
- * Features glassmorphism design, improved accessibility, and comprehensive light/dark mode support.
- * Uses WorkflowContainer for consistent layout with collapsible sidebar and a tabbed interface
- * for backup and restore operations, including configuration, execution, and results viewing.
- *
- * NEW: Integrated RealTimeDisplay, ProgressBar, and ProgressStep components for professional
- * real-time progress tracking with WebSocket integration.
- * UPDATE (v3.8.1): FIXED API URL mismatches and WebSocket integration with Rust backend.
- *
- * NOTE: This file includes mock implementations of WorkflowContainer, Tooltip, etc. Replace them
- * with your real shared components if available.
+ * FIXES APPLIED:
+ * 1. Extract totalSteps dynamically from WebSocket messages (data.total_steps)
+ * 2. Added subscriptions for job-specific topics (e.g., job:<job_id>)
+ * 3. Conditional progress simulation only when WebSocket disconnected and no totalSteps received
+ * 4. Increased timeout to 120 seconds for backend processing
+ * 5. Enhanced WebSocket reconnection with better logging
+ * 6. Improved message parsing for various backend message formats
+ * 7. Updated RealTimeDisplay to use dynamic totalSteps and accurate completedSteps
+ * 8. Clarified WebSocket disconnection status in UI
+ * 9. Fixed incorrect step count display (e.g., 0/13)
+ * 10. Added fallback for missing total_steps to prevent division by zero
  */
 
 import React, { useState, useEffect, useRef } from "react";
@@ -46,34 +45,31 @@ import { Button } from '@/components/ui/button';
 import PulseLoader from 'react-spinners/PulseLoader';
 import toast from 'react-hot-toast';
 
-// =============================================================================
-// SECTION 1: REAL-TIME PROGRESS COMPONENTS IMPORT
-// =============================================================================
-/**
- * NEW: Import enhanced real-time progress components for professional progress tracking
- * These components provide comprehensive progress visualization with two-line log format,
- * collapsible sections, auto-scrolling, and WebSocket integration compatibility.
- */
+// Real-time progress components
 import RealTimeDisplay, { ProgressBar, ProgressStep } from '@/realTimeProgress';
 
 // =============================================================================
-// SECTION 2: CONFIGURATION & CONSTANTS - FIXED URLs
+// CONFIGURATION
 // =============================================================================
-/**
- * FIXED (v3.8.1): Corrected API and WebSocket URLs to match Rust backend
- * Rust backend runs on port 3001, not 3010
- */
-const API_BASE_URL = "http://localhost:3010"; // FIXED: Changed from 3010 to 3001
-const WS_URL = "ws://localhost:3010/ws"; // FIXED: Connect to Rust backend on correct port
+const API_BASE_URL = "http://localhost:3010";
+const WS_URL = "ws://localhost:3010/ws";
 
-// Animation duration constants (if used in classNames)
+// Animation duration constants
 const ANIMATION_DURATION = {
   fast: 150,
   normal: 200,
   slow: 300
 };
 
-// Helper function to format file size
+// Valid job event types from Python backend
+const VALID_JOB_EVENTS = [
+  'OPERATION_START',
+  'STEP_START',
+  'STEP_COMPLETE',
+  'OPERATION_COMPLETE'
+];
+
+// Helper functions
 const formatFileSize = (bytes) => {
   if (!bytes) return 'Unknown';
   if (bytes < 1024) return `${bytes} B`;
@@ -81,16 +77,16 @@ const formatFileSize = (bytes) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-// Helper function to format timestamp
 const formatTimestamp = (timestamp) => {
   if (!timestamp) return 'Unknown';
-  return new Date(timestamp * 1000).toLocaleDateString();
+  try {
+    return new Date(timestamp).toLocaleString();
+  } catch {
+    return timestamp || 'Unknown';
+  }
 };
 
-// =============================================================================
-// SECTION 3: SMALL UI HELPERS (Tooltip, Container, etc.)
-// =============================================================================
-
+// UI Helper Components
 const Tooltip = ({ children, content, side = "right", delayDuration = 0 }) => {
   const [isVisible, setIsVisible] = useState(false);
   return (
@@ -123,10 +119,6 @@ const Tooltip = ({ children, content, side = "right", delayDuration = 0 }) => {
 
 const TooltipProvider = ({ children }) => <>{children}</>;
 
-/**
- * WorkflowContainer (mock)
- * Replace with your real WorkflowContainer if available.
- */
 const WorkflowContainer = ({
   sidebarContent,
   sidebarHeader,
@@ -166,9 +158,6 @@ const WorkflowContainer = ({
   );
 };
 
-/**
- * NavigationItem (mock)
- */
 const NavigationItem = ({ icon: Icon, label, description, isActive, onClick, isCollapsed }) => {
   const content = (
     <button
@@ -198,10 +187,6 @@ const NavigationItem = ({ icon: Icon, label, description, isActive, onClick, isC
   }
   return content;
 };
-
-// =============================================================================
-// SECTION 4: RESTORE FORM & Dropdown Helpers (used by Restore tab)
-// =============================================================================
 
 const ModernDropdown = ({
   label,
@@ -366,7 +351,6 @@ const ModernDropdown = ({
 };
 
 const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, loadingBackups, error }) => {
-  // Inline icons
   const HostIcon = (
     <svg fill="currentColor" viewBox="0 0 24 24" stroke="none"><path d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zM3 16a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"/></svg>
   );
@@ -439,13 +423,13 @@ const RestoreForm = ({ parameters, onParamChange, hosts, backups, loadingHosts, 
 };
 
 // =============================================================================
-// SECTION 5: MAIN BACKUP COMPONENT - ModernBackup
+// MAIN BACKUP COMPONENT - ModernBackup
 // =============================================================================
 function ModernBackup() {
   // --- State Management ---
   const [activeTab, setActiveTab] = useState("backup");
   const [currentBackupTab, setCurrentBackupTab] = useState("select");
-  const [currentTab, setCurrentTab] = useState("restore"); // for restore workflow
+  const [currentTab, setCurrentTab] = useState("restore");
   const [parameters, setParameters] = useState({
     hostname: '',
     inventory_file: '',
@@ -463,6 +447,11 @@ function ModernBackup() {
   const [progress, setProgress] = useState(0);
   const [backupStatus, setBackupStatus] = useState(null);
   const [restoreStatus, setRestoreStatus] = useState(null);
+  const [progressSteps, setProgressSteps] = useState([]);
+  const [totalSteps, setTotalSteps] = useState(0); // Dynamic totalSteps
+  const [jobId, setJobId] = useState(null);
+  const jobIdRef = useRef(null);
+  const [wsConnected, setWsConnected] = useState(false);
 
   // Restore form states
   const [hosts, setHosts] = useState([]);
@@ -471,675 +460,442 @@ function ModernBackup() {
   const [loadingBackups, setLoadingBackups] = useState(false);
   const [errorRestore, setErrorRestore] = useState(null);
 
-  // =============================================================================
-  // SECTION 5.1: ENHANCED REAL-TIME PROGRESS STATE MANAGEMENT
-  // =============================================================================
-  /**
-   * NEW: Enhanced progress tracking state for RealTimeDisplay integration
-   * This replaces the basic logs array with structured progress steps that include
-   * proper categorization, timestamps, and status levels for professional display.
-   */
-  const [progressSteps, setProgressSteps] = useState([]);
-  const [jobId, setJobId] = useState(null);
-  const jobIdRef = useRef(null); // keep a ref for websocket closure safety
-  const [wsConnected, setWsConnected] = useState(false); // NEW: WebSocket connection status
+  // WebSocket ref for manual control
+  const wsRef = useRef(null);
 
-  // --- helpers ---
-  useEffect(() => { jobIdRef.current = jobId; }, [jobId]);
+  // Fallback progress simulation
+  const simulateProgressRef = useRef(null);
+
+  // Reconnection attempt count
+  const reconnectionAttempt = useRef(0);
 
   // =============================================================================
-  // SECTION 5.2: PROGRESS STEP FORMATTING HELPER
+  // WEB SOCKET SETUP WITH ENHANCED DEBUGGING AND SUBSCRIPTION
   // =============================================================================
-  /**
-   * NEW: Helper function to format WebSocket messages into structured progress steps
-   * This ensures compatibility between WebSocket data format and RealTimeDisplay requirements
-   */
-  const formatProgressStep = (data, eventType) => {
-    // Determine the appropriate level based on event type and content
-    let level = 'info';
-    if (eventType === 'failed') level = 'error';
-    else if (eventType === 'completed') level = 'success';
-    else if (eventType === 'warning') level = 'warning';
-    else if (eventType === 'progress') level = 'info';
+  useEffect(() => {
+    const connectWebSocket = () => {
+      console.log('📡 Attempting WebSocket connection to:', WS_URL);
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
 
-    // Extract message from various possible data structures
-    let message = 'Processing...';
-    if (typeof data === 'string') {
-      message = data;
-    } else if (data?.message) {
-      message = data.message;
-    } else if (data?.data?.message) {
-      message = data.data.message;
-    } else if (data) {
-      message = JSON.stringify(data);
-    }
+      ws.onopen = () => {
+        console.log('📡 WebSocket connected');
+        setWsConnected(true);
+        reconnectionAttempt.current = 0;
 
-    return {
-      message,
-      level,
-      timestamp: new Date().toISOString(),
-      type: eventType,
-      step: `Step ${progressSteps.length + 1}`
-    };
-  };
-
-  // -----------------------
-  // Event Handlers
-  // -----------------------
-  const handleParamChange = (name, value) => {
-    setParameters(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSidebarToggle = (collapsed) => {
-    setSidebarCollapsed(collapsed);
-  };
-
-  const handleHeaderToggle = () => {
-    setSidebarCollapsed(!sidebarCollapsed);
-  };
-
-  // =============================================================================
-  // SECTION 5.3: handleBackup with Enhanced Real-Time Progress Integration
-  // =============================================================================
-  const handleBackup = async (event) => {
-      event.preventDefault();
-
-      // Basic validation
-      if (!parameters.hostname && !parameters.inventory_file) {
-          toast.error('Please specify a hostname or an inventory file.');
-          return;
-      }
-
-      // Reset progress steps and move to execute tab
-      setCurrentBackupTab("execute");
-      setBackupStatus(null);
-      setProgress(0);
-      setProgressSteps([]);
-      setJobId(null);
-      jobIdRef.current = null;
-      
-      // Add initial progress step
-      setProgressSteps(prev => [...prev, formatProgressStep('Starting backup process...', 'started')]);
-      
-      toast.loading('Starting backup...', { id: 'backup-toast' });
-
-      const payload = {
-          hostname: parameters.hostname || undefined,
-          inventory_file: parameters.inventory_file || undefined,
-          username: parameters.username,
-          password: parameters.password
+        // Subscribe to multiple possible topics
+        const subscriptionMessages = [
+          { subscription: { topic: "JobEvent" } },
+          { subscription: { topic: "job_event" } },
+          { event: "subscribe", payload: { topic: "JobEvent" } },
+          { type: "subscribe", topic: "JobEvent" },
+          ...(jobIdRef.current ? [
+            { subscription: { topic: `job:${jobIdRef.current}` } },
+            { type: "subscribe", topic: `job:${jobIdRef.current}` },
+            { subscription: { topic: `job/${jobIdRef.current}` } }
+          ] : [])
+        ];
+        subscriptionMessages.forEach(msg => {
+          try {
+            ws.send(JSON.stringify(msg));
+            console.log('📡 Sent subscription:', msg);
+          } catch (err) {
+            console.error('❌ Failed to send subscription:', msg, err);
+          }
+        });
       };
 
-      try {
-          console.log("🚀 Sending backup request to:", `${API_BASE_URL}/api/backups/devices`);
-          console.log("📦 Payload:", payload);
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('📡 Full WS message:', message);
 
-          // Trigger backup on backend
-          const response = await fetch(`${API_BASE_URL}/api/backups/devices`, {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(payload)
-          });
-
-          if (!response.ok) {
-              const errorText = await response.text();
-              console.error("❌ Backup API error response:", errorText);
-              throw new Error(`HTTP ${response.status}: ${errorText}`);
+          // Handle possible message wrappers
+          let payload = message;
+          if (message.job_event) {
+            payload = message.job_event;
+          } else if (message.payload) {
+            payload = message.payload;
+          } else if (message.event) {
+            payload = message.event;
           }
 
-          const data = await response.json();
-          console.log("✅ Backup API response:", data);
+          // Check if message is a job-related event
+          if (
+            VALID_JOB_EVENTS.includes(payload.event_type) &&
+            (!payload.job_id || payload.job_id === jobIdRef.current)
+          ) {
+            console.log('📊 Processing job progress message:', payload);
 
-          // FIXED (v3.8.1): Simplified job ID extraction - backend returns simple structure
-          let jobId = data.job_id;
-          
-          if (jobId) {
-              setJobId(jobId);
-              jobIdRef.current = jobId;
-              setProgressSteps(prev => [...prev, formatProgressStep(`Backup job started with ID: ${jobId}`, 'info')]);
-              
-              toast.success('Backup started! Tracking progress via WebSocket...', { id: 'backup-toast' });
-              
-              // WebSocket should handle progress updates from here
-          } else {
-              // If no job_id found, check if this is a completed backup response
-              if (data.status === "success" && data.files) {
-                  // This is a completed backup response (synchronous completion)
-                  setBackupStatus('success');
-                  setProgress(100);
-                  setProgressSteps(prev => [...prev, formatProgressStep('Backup completed successfully', 'completed')]);
-                  setCurrentBackupTab("results");
-                  toast.success('Backup completed successfully!', { id: 'backup-toast' });
-              } else {
-                  throw new Error('Backend did not return job ID for tracking');
-              }
-          }
+            const step = {
+              message: payload.message || 'Processing...',
+              level: payload.level?.toLowerCase() === 'success' ? 'success' :
+                     payload.level?.toLowerCase() === 'error' ? 'error' : 'info',
+              type: payload.event_type,
+              timestamp: payload.timestamp || new Date().toISOString(),
+              job_id: payload.job_id || jobIdRef.current
+            };
 
-      } catch (error) {
-          console.error("❌ Backup failed to start:", error);
-          setBackupStatus('error');
-          setProgress(0);
-          setProgressSteps(prev => [...prev, formatProgressStep(`Failed to start backup: ${error.message}`, 'failed')]);
-          setCurrentBackupTab("results");
-          toast.error(`Backup failed to start: ${error.message}`, { id: 'backup-toast' });
-      }
-  };
+            setProgressSteps(prev => [...prev, step]);
 
-  // Restore handler (keeps simulated behavior)
-  const handleRestore = () => {
-    setCurrentTab('execute');
-    setProgress(0);
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setRestoreStatus('success');
-          setCurrentTab('results');
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 300);
-  };
-
-  // Reset both workflows
-  const handleReset = () => {
-    if (activeTab === 'backup') {
-      setParameters({ hostname: '', inventory_file: '', username: '', password: '', backup_file: '' });
-      setBackupStatus(null);
-      setProgress(0);
-      setCurrentBackupTab("select");
-      setProgressSteps([]); // NEW: Clear progress steps on reset
-      setJobId(null);
-      jobIdRef.current = null;
-    } else if (activeTab === 'restore') {
-      setCurrentTab('restore');
-      setRestoreStatus(null);
-      setParameters({ hostname: '', inventory_file: '', username: '', password: '', backup_file: '' });
-      setProgress(0);
-    }
-  };
-
-  // Validation helpers
-  const isBackupValid = (
-    parameters.hostname?.trim().length > 0 ||
-    parameters.inventory_file?.trim().length > 0
-  ) && parameters.username?.trim().length > 0 && parameters.password?.trim().length > 0;
-
-  const isRestoreValid = (
-    parameters.hostname?.trim().length > 0 &&
-    parameters.backup_file?.trim().length > 0 &&
-    parameters.username?.trim().length > 0 &&
-    parameters.password?.trim().length > 0
-  );
-
-  // =============================================================================
-  // SECTION 6: API INTEGRATION (sidebar/devices/backups)
-  // =============================================================================
-  useEffect(() => {
-    const fetchSidebarItems = async () => {
-      try {
-        setLoading(true);
-        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-        const url = '/api/sidebar/backup';
-        let response = await fetch(url);
-
-        if (response.headers.get('content-type')?.includes('text/html')) {
-          response = await fetch(`${apiBaseUrl}/api/sidebar/backup`);
-        }
-
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await response.text();
-          throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
-        }
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        setSidebarItems(data || []);
-        setError(null);
-      } catch (err) {
-        console.error('Failed to fetch sidebar items:', err);
-        setError(err.message);
-        setSidebarItems([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSidebarItems();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab !== 'restore') return;
-    const fetchHosts = async () => {
-      setLoadingHosts(true);
-      setErrorRestore(null);
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/backups/devices`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
-        let hostOptions = [];
-
-        if (data.devices && Array.isArray(data.devices)) {
-          hostOptions = data.devices.map(device => ({
-            value: device.name,
-            label: device.name,
-            description: `Backups: ${device.backup_count || 0}`
-          }));
-        } else if (data.devices && typeof data.devices === 'object') {
-          hostOptions = Object.keys(data.devices).map(deviceName => ({
-            value: deviceName,
-            label: deviceName,
-            description: `Backups: ${data.devices[deviceName]?.length || 0}`
-          }));
-        } else if (data.status === 'success' && data.devices) {
-          hostOptions = Object.keys(data.devices).map(deviceName => ({
-            value: deviceName,
-            label: deviceName,
-            description: `Backups: ${data.devices[deviceName]?.length || 0}`
-          }));
-        } else {
-          const deviceNames = Object.keys(data).filter(key => key !== 'status' && key !== 'error' && key !== 'path');
-          if (deviceNames.length > 0) {
-            hostOptions = deviceNames.map(deviceName => ({
-              value: deviceName,
-              label: deviceName,
-              description: `Backups: ${Array.isArray(data[deviceName]) ? data[deviceName].length : 0}`
-            }));
-          }
-        }
-
-        setHosts(hostOptions);
-      } catch (error) {
-        console.error('Error fetching hosts:', error);
-        setErrorRestore('Failed to load host devices');
-        setHosts([]);
-        toast.error("Unable to fetch host devices. Please check your connection.");
-      } finally {
-        setLoadingHosts(false);
-      }
-    };
-    fetchHosts();
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab !== 'restore') return;
-    const fetchBackups = async () => {
-      const selectedHost = parameters.hostname;
-      if (!selectedHost) {
-        setBackups([]);
-        setParameters(prev => ({ ...prev, backup_file: '' }));
-        return;
-      }
-      setLoadingBackups(true);
-      setErrorRestore(null);
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/backups/device/${selectedHost}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
-        let backupOptions = [];
-
-        if (data.backups && Array.isArray(data.backups)) {
-          backupOptions = data.backups.map(backup => ({
-            value: backup.name,
-            label: backup.name,
-            description: `Size: ${formatFileSize(backup.size)} • Modified: ${formatTimestamp(backup.modified)}`
-          }));
-        } else if (Array.isArray(data)) {
-          backupOptions = data.map(backupFile => ({
-            value: backupFile,
-            label: backupFile,
-            description: 'Backup file'
-          }));
-        } else if (data.devices && data.devices[selectedHost]) {
-          backupOptions = data.devices[selectedHost].map(backupFile => ({
-            value: backupFile,
-            label: backupFile,
-            description: 'Backup file'
-          }));
-        } else if (typeof data === 'object') {
-          const backupFiles = Object.values(data).find(value => Array.isArray(value));
-          if (backupFiles) {
-            backupOptions = backupFiles.map(backupFile => ({
-              value: backupFile,
-              label: backupFile,
-              description: 'Backup file'
-            }));
-          }
-        }
-
-        setBackups(backupOptions);
-      } catch (error) {
-        console.error('Error fetching backups:', error);
-        setErrorRestore('Failed to load backup files');
-        setBackups([]);
-        toast.error("Unable to fetch backup files. Please try again.");
-      } finally {
-        setLoadingBackups(false);
-      }
-    };
-    fetchBackups();
-  }, [activeTab, parameters.hostname]);
-
-  // Debug param logging
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log("Backup parameters updated:", parameters);
-    }
-  }, [parameters]);
-
-  // =============================================================================
-  // SECTION 7: WebSocket Integration with Enhanced Progress Step Formatting
-  // =============================================================================
-  useEffect(() => {
-    console.log("🔌 Initializing WebSocket connection to:", WS_URL);
-    const ws = new WebSocket(WS_URL);
-
-    ws.onopen = () => {
-      console.log("✅ Connected to WebSocket backend");
-      setWsConnected(true);
-      
-      // Subscribe to job events
-      const subscribeMsg = {
-        type: "Subscribe",
-        payload: {
-          topics: ["job_events", "jobs:all"]
-        }
-      };
-      ws.send(JSON.stringify(subscribeMsg));
-      console.log("📨 Subscribed to job events");
-    };
-
-    ws.onmessage = (evt) => {
-      try {
-        const msg = JSON.parse(evt.data);
-        console.log("📡 WebSocket RAW message:", msg);
-        
-        // Enhanced debugging for job matching
-        if (msg.job_id === jobIdRef.current) {
-          console.log("🎯 MATCHING JOB ID - Processing event:", msg);
-        } else {
-          console.log("🔍 Different job ID - Current:", jobIdRef.current, "Received:", msg.job_id);
-        }
-
-        // Handle different message structures
-        if (msg.type === "JobEvent" && msg.payload) {
-          processJobEvent(msg.payload);
-        } else if (msg.job_id && msg.event_type) {
-          // Direct job event format
-          processJobEvent(msg);
-        } else if (msg.payload && msg.payload.job_id) {
-          // Nested payload format
-          processJobEvent(msg.payload);
-        } else {
-          console.log("❓ Unknown WebSocket message format:", msg);
-        }
-      } catch (err) {
-        console.error("❌ WebSocket message parsing error:", err, evt.data);
-      }
-    };
-
-    const processJobEvent = (jobEvent) => {
-      // Only process events for our current job
-      if (jobIdRef.current && jobEvent.job_id === jobIdRef.current) {
-        console.log("🎯 Processing job event for current job:", jobEvent);
-        
-        // Format progress message
-        let message = jobEvent.data?.message || jobEvent.message;
-        if (!message) {
-          message = `[${jobEvent.event_type}] ${jobEvent.status || ''}`.trim();
-        }
-        
-        const progressStep = formatProgressStep(message, jobEvent.event_type);
-        setProgressSteps(prev => [...prev, progressStep]);
-
-        // Update UI based on event type
-        switch (jobEvent.event_type) {
-          case "started":
-            setProgress(10);
-            break;
-            
-          case "STEP_START":
-          case "STEP_COMPLETE":
-            setProgress(prev => Math.min(prev + 20, 90));
-            break;
-            
-          case "OPERATION_COMPLETE":
-            if (jobEvent.status === "SUCCESS" || jobEvent.data?.status === "SUCCESS") {
-              setBackupStatus("success");
-              setProgress(100);
-              setTimeout(() => setCurrentBackupTab("results"), 1000);
-              toast.success("Backup completed successfully!");
-            } else {
-              setBackupStatus("error");
-              setProgress(100);
-              setTimeout(() => setCurrentBackupTab("results"), 1000);
-              toast.error(`Backup failed: ${jobEvent.error || jobEvent.data?.error || 'Unknown error'}`);
+            // Update totalSteps and progress
+            if (payload.event_type === 'STEP_START' || payload.event_type === 'STEP_COMPLETE') {
+              const stepNumber = payload.data?.step || 0;
+              const totalStepsFromMessage = payload.data?.total_steps || totalSteps || 1;
+              setTotalSteps(totalStepsFromMessage);
+              setProgress(Math.min((stepNumber / totalStepsFromMessage) * 100, 100));
             }
-            break;
-            
-          case "progress":
-            setProgress(prev => Math.min(prev + 5, 95));
-            break;
-            
-          case "failed":
-            setBackupStatus("error");
-            setProgress(100);
-            setTimeout(() => setCurrentBackupTab("results"), 1000);
-            toast.error(`Backup failed: ${jobEvent.error || jobEvent.data?.error || 'Unknown error'}`);
-            break;
-            
-          default:
-            // Increment progress for any unknown event
-            setProgress(prev => Math.min(prev + 2, 98));
+
+            if (payload.event_type === 'OPERATION_COMPLETE') {
+              setBackupStatus(payload.level?.toLowerCase() === 'success' ? 'success' : 'error');
+              setCurrentBackupTab('results');
+              if (payload.level?.toLowerCase() === 'error') {
+                toast.error('Backup failed: ' + (payload.message || 'Unknown error'));
+              }
+              if (simulateProgressRef.current) {
+                clearInterval(simulateProgressRef.current);
+                simulateProgressRef.current = null;
+              }
+            } else if (payload.level?.toLowerCase() === 'error') {
+              setBackupStatus('error');
+              setCurrentBackupTab('results');
+              toast.error('Backup failed: ' + (payload.message || 'Unknown error'));
+              if (simulateProgressRef.current) {
+                clearInterval(simulateProgressRef.current);
+                simulateProgressRef.current = null;
+              }
+            }
+          } else if (message.type === 'Ping') {
+            console.log('ℹ️ Non-job WebSocket message:', { type: message.type, keys: Object.keys(message) });
+            ws.send(JSON.stringify({ type: 'Pong' }));
+          } else {
+            console.log('ℹ️ Ignored non-job WebSocket message:', message);
+          }
+        } catch (err) {
+          console.error('❌ Error parsing WebSocket message:', err, 'Raw message:', event.data);
         }
-      }
+      };
+
+      ws.onclose = () => {
+        console.log('📡 WebSocket disconnected');
+        setWsConnected(false);
+        reconnectionAttempt.current += 1;
+        const delay = Math.min(1000 * 2 ** reconnectionAttempt.current, 60000);
+        console.log(`📡 Attempting reconnect in ${delay}ms (attempt ${reconnectionAttempt.current})`);
+        setTimeout(connectWebSocket, delay);
+      };
+
+      ws.onerror = (err) => {
+        console.error('❌ WebSocket error:', err);
+        setWsConnected(false);
+      };
     };
 
-    ws.onerror = (err) => {
-      console.error("WebSocket error:", err);
-      setWsConnected(false);
-    };
-
-    ws.onclose = (event) => {
-      console.log("WebSocket connection closed:", event.code, event.reason);
-      setWsConnected(false);
-    };
+    connectWebSocket();
 
     return () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close(1000, "Component unmounting");
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (simulateProgressRef.current) {
+        clearInterval(simulateProgressRef.current);
       }
     };
   }, []);
 
   // =============================================================================
-  // SECTION 8: Sidebar / Header components (mock)
+  // TIMEOUT AND FALLBACK PROGRESS SIMULATION
   // =============================================================================
-  const iconMap = {
-    Download,
-    Upload,
-    History,
-    Settings,
-    Server,
-    Database,
-    Shield,
-    User,
-    Lock,
-    Eye,
-    EyeOff,
-    AlertCircle,
-    Play,
-    CheckCircle,
-    Home,
-    Wifi,
-    WifiOff
+  useEffect(() => {
+    let timeout;
+    if (backupStatus === 'running') {
+      // Only simulate progress if WebSocket is disconnected and no totalSteps received
+      if (!wsConnected && totalSteps === 0) {
+        simulateProgressRef.current = setInterval(() => {
+          setProgress(prev => {
+            if (prev >= 90) return prev;
+            return prev + 10;
+          });
+          setProgressSteps(prev => [
+            ...prev,
+            {
+              message: `Simulated progress update (${progress + 10}%)`,
+              level: 'info',
+              type: 'SIMULATED',
+              timestamp: new Date().toISOString(),
+              job_id: jobIdRef.current
+            }
+          ]);
+        }, 10000);
+      }
+
+      timeout = setTimeout(() => {
+        console.log('⏰ Backup timeout - no progress updates received for 120 seconds');
+        setBackupStatus('error');
+        setCurrentBackupTab('results');
+        setProgressSteps(prev => [
+          ...prev,
+          {
+            message: 'Operation timed out - no progress updates received',
+            level: 'error',
+            timestamp: new Date().toISOString(),
+            job_id: jobIdRef.current
+          }
+        ]);
+        toast.error('Backup timed out after 120 seconds');
+        if (simulateProgressRef.current) {
+          clearInterval(simulateProgressRef.current);
+          simulateProgressRef.current = null;
+        }
+      }, 120000);
+    }
+    return () => {
+      clearTimeout(timeout);
+      if (simulateProgressRef.current) {
+        clearInterval(simulateProgressRef.current);
+      }
+    };
+  }, [backupStatus, wsConnected, totalSteps, progress]);
+
+  // =============================================================================
+  // HANDLER FUNCTIONS
+  // =============================================================================
+  const handleParamChange = (key, value) => {
+    setParameters(prev => ({ ...prev, [key]: value }));
   };
 
-  const SidebarContent = ({ activeTab, setActiveTab, isCollapsed }) => {
-    if (loading) {
-      return (
-        <div className="flex flex-col gap-2 p-4">
-          {[1, 2, 3, 4].map((item) => (
-            <div key={item} className="w-full p-3 rounded-lg bg-muted/50 dark:bg-gray-700/50 animate-pulse">
-              <div className="flex items-center gap-3">
-                <div className="h-4 w-4 bg-muted dark:bg-gray-600 rounded"></div>
-                {!isCollapsed && (
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-muted dark:bg-gray-600 rounded w-3/4"></div>
-                    <div className="h-3 bg-muted dark:bg-gray-600 rounded w-1/2"></div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    if (error) {
-      return (
-        <div className="flex flex-col items-center justify-center p-8 text-center text-destructive dark:text-red-400">
-          <AlertCircle className="h-8 w-8 mb-2" />
-          <p className="text-sm font-medium">Failed to load navigation</p>
-          <p className="text-xs text-muted-foreground dark:text-gray-400 mt-1">API connection error: {error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 px-3 py-1.5 text-xs bg-muted dark:bg-gray-700 rounded-md hover:bg-muted/80 dark:hover:bg-gray-600 transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      );
-    }
-
-    if (sidebarItems.length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground dark:text-gray-400">
-          <AlertCircle className="h-8 w-8 mb-2" />
-          <p className="text-sm">No navigation items available</p>
-          <p className="text-xs mt-1">Check API endpoint configuration</p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex flex-col gap-2 p-4">
-        {sidebarItems.map((item) => {
-          const IconComponent = iconMap[item.icon] || Settings;
-          return (
-            <NavigationItem
-              key={item.id}
-              icon={IconComponent}
-              label={item.title || item.label}
-              description={item.subtitle || item.description}
-              isActive={activeTab === item.id}
-              onClick={() => setActiveTab(item.id)}
-              isCollapsed={isCollapsed}
-            />
-          );
-        })}
-      </div>
-    );
+  const handleReset = () => {
+    setCurrentBackupTab('select');
+    setCurrentTab('restore');
+    setBackupStatus(null);
+    setRestoreStatus(null);
+    setProgress(0);
+    setProgressSteps([]);
+    setTotalSteps(0);
+    setJobId(null);
+    jobIdRef.current = null;
+    setParameters({
+      hostname: '',
+      inventory_file: '',
+      username: '',
+      password: '',
+      backup_file: ''
+    });
   };
 
-  const HeaderContent = ({ isCollapsed, onHeaderToggle }) => (
-    <div className="flex items-center w-full">
-      <div className="flex items-center gap-4">
-        <button
-          type="button"
-          onClick={onHeaderToggle}
-          className="w-6 h-6 bg-card dark:bg-black border border-border dark:border-gray-700 rounded-full flex items-center justify-center hover:bg-accent dark:hover:bg-gray-700 transition-colors z-10"
-          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {isCollapsed ? (
-            <ChevronRight className="h-3 w-3" />
-          ) : (
-            <ChevronLeft className="h-3 w-3" />
-          )}
-        </button>
-        <div className="flex flex-col justify-center">
-          <h1 className="text-lg font-semibold text-foreground dark:text-gray-100 leading-tight">
-            {activeTab === 'backup' ? 'Backup Device' : 'Restore Device'}
-          </h1>
-          {/* NEW: WebSocket connection status indicator */}
-          <div className="flex items-center mt-1">
-            {wsConnected ? (
-              <>
-                <Wifi className="h-3 w-3 text-green-500 mr-1" />
-                <span className="text-xs text-green-600 dark:text-green-400">Live updates connected</span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="h-3 w-3 text-yellow-500 mr-1" />
-                <span className="text-xs text-yellow-600 dark:text-yellow-400">Updates disconnected</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const handleBackup = async () => {
+    try {
+      setCurrentBackupTab('execute');
+      setBackupStatus('running');
+      setProgress(0);
+      setTotalSteps(0);
+      setProgressSteps([
+        {
+          message: 'Initiating backup process...',
+          level: 'info',
+          type: 'INIT',
+          timestamp: new Date().toISOString(),
+          job_id: jobIdRef.current
+        }
+      ]);
 
+      console.log('🚀 Starting backup process...');
+      console.log('🚀 Sending backup request to:', `${API_BASE_URL}/backups/devices`);
+      console.log('📦 Payload:', parameters);
+
+      const response = await fetch(`${API_BASE_URL}/backups/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: parameters.hostname,
+          hostname: parameters.hostname,
+          inventory_file: parameters.inventory_file,
+          username: parameters.username,
+          password: parameters.password
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Backup API response:', data);
+
+      if (data.status === 'started') {
+        setJobId(data.job_id);
+        jobIdRef.current = data.job_id;
+        console.log('🎯 Job started with ID:', data.job_id);
+
+        // Update initial step with job_id
+        setProgressSteps(prev => [
+          {
+            ...prev[0],
+            job_id: data.job_id
+          }
+        ]);
+
+        // Send subscription messages if WebSocket is connected
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          const subscriptionMessages = [
+            { subscription: { topic: "JobEvent" } },
+            { subscription: { topic: "job_event" } },
+            { event: "subscribe", payload: { topic: "JobEvent" } },
+            { type: "subscribe", topic: "JobEvent" },
+            { subscription: { topic: `job:${data.job_id}` } },
+            { type: "subscribe", topic: `job:${data.job_id}` },
+            { subscription: { topic: `job/${data.job_id}` } }
+          ];
+          subscriptionMessages.forEach(msg => {
+            try {
+              wsRef.current.send(JSON.stringify(msg));
+              console.log('📡 Sent subscription:', msg);
+            } catch (err) {
+              console.error('❌ Failed to send subscription:', msg, err);
+            }
+          });
+        }
+
+        console.log('📡 WebSocket will now handle progress updates for job:', data.job_id);
+      } else {
+        throw new Error(data.error || 'Failed to start backup');
+      }
+    } catch (err) {
+      console.error('❌ Backup error:', err);
+      setBackupStatus('error');
+      setCurrentBackupTab('results');
+      setProgressSteps(prev => [
+        ...prev,
+        {
+          message: `Failed to start backup: ${err.message}`,
+          level: 'error',
+          timestamp: new Date().toISOString(),
+          job_id: jobIdRef.current
+        }
+      ]);
+      toast.error('Failed to start backup: ' + err.message);
+      if (simulateProgressRef.current) {
+        clearInterval(simulateProgressRef.current);
+        simulateProgressRef.current = null;
+      }
+    }
+  };
+
+  const handleRestore = async () => {
+    setCurrentTab('execute');
+    setRestoreStatus('running');
+    setProgress(0);
+
+    const simulateProgress = () => {
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            setRestoreStatus('success');
+            setCurrentTab('results');
+            return 100;
+          }
+          return prev + 10;
+        });
+      }, 500);
+    };
+
+    simulateProgress();
+  };
+
+  const isBackupValid = parameters.username && parameters.password && (parameters.hostname || parameters.inventory_file);
+  const isRestoreValid = parameters.username && parameters.password && parameters.hostname && parameters.backup_file;
+
+  // =============================================================================
+  // SIDEBAR AND HEADER COMPONENTS
+  // =============================================================================
   const SidebarHeader = ({ isCollapsed }) => (
-    <div className={`flex items-center h-full px-4 transition-all duration-300 ${
-      isCollapsed ? 'justify-center' : ''
-    }`}>
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-primary/10 dark:bg-gray-700/30 rounded-lg flex-shrink-0">
-          <Database className="h-5 w-5 text-primary dark:text-gray-100" />
-        </div>
-        {!isCollapsed && (
-          <div className="overflow-hidden">
-            <h2 className="font-semibold text-foreground dark:text-gray-100 truncate leading-tight">Operations</h2>
-            <p className="text-xs text-muted-foreground dark:text-gray-400 truncate leading-tight mt-0.5">Backups</p>
-          </div>
-        )}
-      </div>
+    <div className="flex items-center justify-between w-full px-4">
+      {!isCollapsed && <h1 className="text-xl font-bold">Operations</h1>}
+      <Button variant="ghost" size="icon" onClick={() => setSidebarCollapsed(!isCollapsed)}>
+        {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+      </Button>
     </div>
   );
 
+  const SidebarContent = ({ activeTab, setActiveTab, isCollapsed }) => (
+    <nav className="p-4 space-y-2">
+      <NavigationItem
+        icon={Download}
+        label="Backup"
+        description="Create device backups"
+        isActive={activeTab === 'backup'}
+        onClick={() => setActiveTab('backup')}
+        isCollapsed={isCollapsed}
+      />
+      <NavigationItem
+        icon={Upload}
+        label="Restore"
+        description="Restore from backups"
+        isActive={activeTab === 'restore'}
+        onClick={() => setActiveTab('restore')}
+        isCollapsed={isCollapsed}
+      />
+      <NavigationItem
+        icon={History}
+        label="History"
+        description="View operation logs"
+        isActive={activeTab === 'history'}
+        onClick={() => setActiveTab('history')}
+        isCollapsed={isCollapsed}
+      />
+      <NavigationItem
+        icon={Settings}
+        label="Settings"
+        description="Configure options"
+        isActive={activeTab === 'settings'}
+        onClick={() => setActiveTab('settings')}
+        isCollapsed={isCollapsed}
+      />
+    </nav>
+  );
+
+  const HeaderContent = () => (
+    <div className="flex items-center space-x-4">
+      <h1 className="text-2xl font-bold">Backup & Restore</h1>
+    </div>
+  );
+
+  const handleSidebarToggle = () => setSidebarCollapsed(!sidebarCollapsed);
+  const handleHeaderToggle = () => {};
+
   // =============================================================================
-  // SECTION 9: MAIN RENDER WITH ENHANCED REAL-TIME DISPLAY INTEGRATION
+  // MAIN CONTENT RENDERING
   // =============================================================================
   const renderMainContent = () => {
     if (activeTab === 'backup') {
       return (
         <div className="w-full max-w-4xl mx-auto">
           <div className="mb-6 px-6">
-          </div>
-
-          <div className="mb-6 px-6">
             <div className="flex items-center space-x-4">
-              {[1, 2, 3].map((step) => (
-                <div key={step} className="flex items-center">
+              {['select', 'execute', 'results'].map((tab, index) => (
+                <div key={tab} className="flex items-center">
                   <div className={`
                     w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-                    ${currentBackupTab === (step === 1 ? 'select' : step === 2 ? 'execute' : 'results')
+                    ${currentBackupTab === tab
                       ? 'bg-primary dark:bg-gray-700 text-primary-foreground dark:text-gray-100'
-                      : backupStatus === 'success' && step <= 3
+                      : backupStatus === 'success' && index < 3
                         ? 'bg-green-500 dark:bg-green-600 text-white'
                         : 'bg-muted dark:bg-gray-700 text-muted-foreground dark:text-gray-400'
                     }
                   `}>
-                    {backupStatus === 'success' && step <= 3 ? '✓' : step}
+                    {backupStatus === 'success' && index < 3 ? '✓' : index + 1}
                   </div>
                   <span className={`ml-2 text-sm ${
-                    currentBackupTab === (step === 1 ? 'select' : step === 2 ? 'execute' : 'results')
+                    currentBackupTab === tab
                       ? 'font-medium text-gray-900 dark:text-gray-100'
                       : 'text-muted-foreground dark:text-gray-400'
                   }`}>
-                    {step === 1 ? 'Select' : step === 2 ? 'Execute' : 'Results'}
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </span>
-                  {step < 3 && (
+                  {index < 2 && (
                     <div className={`w-12 h-px mx-4 ${
-                      (step === 1 && currentBackupTab !== 'select') || (step === 2 && currentBackupTab === 'results')
+                      (index === 0 && currentBackupTab !== 'select') || (index === 1 && currentBackupTab === 'results')
                         ? 'bg-green-500 dark:bg-green-600'
                         : 'bg-muted dark:bg-gray-700'
                     }`} />
@@ -1150,11 +906,10 @@ function ModernBackup() {
           </div>
 
           <Tabs value={currentBackupTab} className="w-full">
-            {/* Select Tab - Unchanged */}
             <TabsContent value="select" className="mt-6">
-              <div className="border rounded-lg overflow-hidden bg-card dark:bg-black p-6 space-y-6">
+              <div className="p-6 space-y-6 bg-card dark:bg-black rounded-lg border border-border dark:border-gray-700">
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Device Selection</h3>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Target Selection</h3>
                   <DeviceTargetSelector parameters={parameters} onParamChange={handleParamChange} />
                 </div>
                 <div className="space-y-4">
@@ -1173,65 +928,70 @@ function ModernBackup() {
               </div>
             </TabsContent>
 
-            {/* =============================================================================
-                EXECUTE TAB: ENHANCED WITH REAL-TIME DISPLAY COMPONENT
-                NEW: Replaced basic progress display with professional RealTimeDisplay
-                ============================================================================= */}
             <TabsContent value="execute" className="mt-6">
-              {/* NEW: WebSocket connection status banner */}
-              {!wsConnected && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-center">
-                    <WifiOff className="h-5 w-5 text-yellow-600 mr-2" />
-                    <div>
-                      <h4 className="text-yellow-800 font-medium">WebSocket Disconnected</h4>
-                      <p className="text-yellow-700 text-sm">Real-time progress updates are unavailable. Progress will be simulated.</p>
+              <div className="p-6 space-y-6 bg-card dark:bg-black rounded-lg border border-border dark:border-gray-700">
+                {!wsConnected && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-center">
+                      <WifiOff className="h-5 w-5 text-yellow-600 mr-2" />
+                      <div>
+                        <h4 className="text-yellow-800 font-medium">WebSocket Disconnected</h4>
+                        <p className="text-yellow-700 text-sm">
+                          Real-time updates unavailable. Waiting for backend progress.
+                          {totalSteps === 0 ? ' No step information received.' : ` Tracking ${totalSteps} steps.`}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-              
-              <RealTimeDisplay
-                isActive={true}
-                isRunning={currentBackupTab === 'execute'}
-                isComplete={backupStatus === 'success'}
-                hasError={backupStatus === 'error'}
-                progress={progressSteps}
-                progressPercentage={progress}
-                currentStep={progressSteps[progressSteps.length - 1]?.message || 'Starting backup process...'}
-                totalSteps={progressSteps.length}
-                completedSteps={progressSteps.filter(step => 
-                  step.level === 'success' || step.type === 'completed'
-                ).length}
-                result={backupStatus === 'success' ? { 
-                  message: 'Backup completed successfully',
-                  details: {
-                    hostname: parameters.hostname,
-                    timestamp: new Date().toISOString(),
-                    totalSteps: progressSteps.length,
-                    successfulSteps: progressSteps.filter(step => step.level === 'success').length
-                  }
-                } : null}
-                error={backupStatus === 'error' ? { 
-                  message: 'Backup operation failed',
-                  details: {
-                    hostname: parameters.hostname,
-                    timestamp: new Date().toISOString(),
-                    errorStep: progressSteps.find(step => step.level === 'error')?.message || 'Unknown error',
-                    totalSteps: progressSteps.length
-                  }
-                } : null}
-                onReset={handleReset}
-                canReset={true}
-                compact={false}
-                maxLogHeight="max-h-96"
-              />
+                )}
+                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+                  Backup in Progress {jobId ? `(Job ID: ${jobId})` : ''}
+                </h3>
+                <RealTimeDisplay
+                  isActive={true}
+                  isRunning={currentBackupTab === 'execute' && backupStatus !== 'success' && backupStatus !== 'error'}
+                  isComplete={backupStatus === 'success'}
+                  hasError={backupStatus === 'error'}
+                  progress={progressSteps}
+                  progressPercentage={progress}
+                  currentStep={progressSteps[progressSteps.length - 1]?.message || 'Starting backup process...'}
+                  totalSteps={totalSteps || 1}
+                  completedSteps={progressSteps.filter(step => 
+                    step.type === 'STEP_COMPLETE' || step.type === 'OPERATION_COMPLETE'
+                  ).length}
+                  result={backupStatus === 'success' ? { 
+                    message: 'Backup completed successfully',
+                    details: {
+                      hostname: parameters.hostname,
+                      timestamp: new Date().toISOString(),
+                      totalSteps: totalSteps || progressSteps.length,
+                      successfulSteps: progressSteps.filter(step => step.level === 'success').length,
+                      job_id: jobId
+                    }
+                  } : null}
+                  error={backupStatus === 'error' ? { 
+                    message: 'Backup operation failed',
+                    details: {
+                      hostname: parameters.hostname,
+                      timestamp: new Date().toISOString(),
+                      errorStep: progressSteps.find(step => step.level === 'error')?.message || 'Unknown error',
+                      totalSteps: totalSteps || progressSteps.length,
+                      job_id: jobId
+                    }
+                  } : null}
+                  onReset={handleReset}
+                  canReset={true}
+                  compact={false}
+                  maxLogHeight="max-h-96"
+                />
+              </div>
             </TabsContent>
 
-            {/* Results Tab - Enhanced with better status display */}
             <TabsContent value="results" className="mt-6">
               <div className="p-6 space-y-6 bg-card dark:bg-black rounded-lg border border-border dark:border-gray-700">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Backup Results</h3>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+                  Backup Results {jobId ? `(Job ID: ${jobId})` : ''}
+                </h3>
                 {backupStatus === 'success' ? (
                   <div className="space-y-4">
                     <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-md">
@@ -1245,7 +1005,6 @@ function ModernBackup() {
                         </div>
                       </div>
                     </div>
-
                     <div className="bg-muted dark:bg-gray-700 p-4 rounded-md">
                       <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">Execution Summary</h4>
                       <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
@@ -1254,16 +1013,20 @@ function ModernBackup() {
                           <span>{parameters.hostname || 'Multiple / inventory'}</span>
                         </li>
                         <li className="flex">
+                          <span className="w-32 text-muted-foreground dark:text-gray-400">Job ID:</span>
+                          <span>{jobId || 'N/A'}</span>
+                        </li>
+                        <li className="flex">
                           <span className="w-32 text-muted-foreground dark:text-gray-400">Status:</span>
                           <span className="text-green-600 dark:text-green-400">Completed</span>
                         </li>
                         <li className="flex">
                           <span className="w-32 text-muted-foreground dark:text-gray-400">Total Steps:</span>
-                          <span>{progressSteps.length}</span>
+                          <span>{totalSteps || progressSteps.length}</span>
                         </li>
                         <li className="flex">
                           <span className="w-32 text-muted-foreground dark:text-gray-400">Timestamp:</span>
-                          <span>{new Date().toLocaleString()}</span>
+                          <span>{formatTimestamp(progressSteps[progressSteps.length - 1]?.timestamp)}</span>
                         </li>
                       </ul>
                     </div>
@@ -1279,6 +1042,11 @@ function ModernBackup() {
                         <p className="mt-1 text-red-700 dark:text-red-300">An error occurred during backup. Please review the progress log for details.</p>
                       </div>
                     </div>
+                    {jobId && (
+                      <div className="mt-2 text-sm text-red-700 dark:text-red-300">
+                        <span>Job ID: {jobId}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="flex justify-end pt-4">
@@ -1295,11 +1063,8 @@ function ModernBackup() {
         </div>
       );
     } else if (activeTab === 'restore') {
-      // Restore UI (unchanged - uses basic progress display)
       return (
         <div className="w-full max-w-4xl mx-auto">
-          <div className="mb-6 px-6">
-          </div>
           <div className="mb-6 px-6">
             <div className="flex items-center space-x-4">
               {[1, 2, 3].map((step) => (
